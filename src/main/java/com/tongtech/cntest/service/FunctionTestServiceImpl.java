@@ -1,15 +1,15 @@
 package com.tongtech.cntest.service;
 
-import com.google.common.collect.Lists;
-import com.tongtech.cnmq.client.MessageCryptoGm4Consumer;
-import com.tongtech.cnmq.client.MessageCryptoGm4Producer;
-import com.tongtech.cnmq.client.admin.CnmqAdmin;
-import com.tongtech.cnmq.client.admin.CnmqAdminException;
-import com.tongtech.cnmq.client.api.*;
-import com.tongtech.cntest.config.CnmqProperties;
+import com.tongtech.tlqcn.client.MessageCryptoGm4Consumer;
+import com.tongtech.tlqcn.client.MessageCryptoGm4Producer;
+import com.tongtech.tlqcn.client.admin.TlqcnAdmin;
+import com.tongtech.tlqcn.client.admin.TlqcnAdminException;
+import com.tongtech.tlqcn.client.api.*;
+import com.tongtech.cntest.config.TlqcnProperties;
 import com.tongtech.cntest.service.api.FunctionTestService;
 import com.tongtech.cntest.utils.PriorityUtil;
 import com.tongtech.cntest.utils.RawFileKeyReader;
+import com.tongtech.tlqcn.shade.com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Marker;
@@ -37,9 +37,9 @@ public class FunctionTestServiceImpl implements FunctionTestService {
     private static final Logger log = LoggerFactory.getLogger("FUNCTION_TEST_LOGGER");
     private static final Marker FUNCTION_TEST = MarkerFactory.getMarker("FUNCTION_TEST") ;
 
-    private final CnmqClient cnmqClient;
-    private final CnmqAdmin cnmqAdmin;
-    private final CnmqProperties cnmqProperties;
+    private final TlqcnClient tlqcnClient;
+    private final TlqcnAdmin tlqcnAdmin;
+    private final TlqcnProperties tlqcnProperties;
 
     private final String topic;
     private final String publicKeyPath;
@@ -47,15 +47,15 @@ public class FunctionTestServiceImpl implements FunctionTestService {
     private final String serviceUrl;
 
     @Autowired
-    public FunctionTestServiceImpl(CnmqClient cnmqClient, CnmqAdmin cnmqAdmin,
-                                   CnmqProperties cnmqProperties) {
-        this.cnmqClient = cnmqClient;
-        this.cnmqAdmin = cnmqAdmin;
-        this.cnmqProperties = cnmqProperties;
-        this.topic = cnmqProperties.getFunctionTestConfig().getTopic();
-        this.publicKeyPath = cnmqProperties.getFunctionTestConfig().getPublicKeyPath();
-        this.privateKeyPath = cnmqProperties.getFunctionTestConfig().getPrivateKeyPath();
-        this.serviceUrl = cnmqProperties.getClient().getServiceUrl();
+    public FunctionTestServiceImpl(TlqcnClient tlqcnClient, TlqcnAdmin tlqcnAdmin,
+                                   TlqcnProperties tlqcnProperties) {
+        this.tlqcnClient = tlqcnClient;
+        this.tlqcnAdmin = tlqcnAdmin;
+        this.tlqcnProperties = tlqcnProperties;
+        this.topic = tlqcnProperties.getFunctionTestConfig().getTopic();
+        this.publicKeyPath = tlqcnProperties.getFunctionTestConfig().getPublicKeyPath();
+        this.privateKeyPath = tlqcnProperties.getFunctionTestConfig().getPrivateKeyPath();
+        this.serviceUrl = tlqcnProperties.getClient().getServiceUrl();
     }
 
     /**
@@ -64,21 +64,21 @@ public class FunctionTestServiceImpl implements FunctionTestService {
      */
     private void clearAndCreateTopic(String topic) {
         try {
-            cnmqAdmin.topics().delete(topic, true);
+            tlqcnAdmin.topics().delete(topic, true);
             log.info("删除topic<{}>成功", topic);
-        } catch (CnmqAdminException e) {
+        } catch (TlqcnAdminException e) {
         }
 
         try {
-            cnmqAdmin.topics().createNonPartitionedTopic(topic);
+            tlqcnAdmin.topics().createNonPartitionedTopic(topic);
             log.info("创建topic<{}>成功", topic);
-        } catch (CnmqAdminException e) {
+        } catch (TlqcnAdminException e) {
             log.error("创建topic<{}>异常", topic, e);
         }
     }
 
-    private  <T> Producer<T> createProducer(String topic, Schema<T> schema) throws CnmqClientException {
-        ProducerBuilder<T> builder = cnmqClient.newProducer(schema)
+    private  <T> Producer<T> createProducer(String topic, Schema<T> schema) throws TlqcnClientException {
+        ProducerBuilder<T> builder = tlqcnClient.newProducer(schema)
                 // 必要参数。消息发送的目标主题。
                 .topic(topic)
                 .sendTimeout(1, TimeUnit.SECONDS);
@@ -87,49 +87,49 @@ public class FunctionTestServiceImpl implements FunctionTestService {
 
     @Override
     public void startTest() {
-        if (cnmqProperties.getFunctionTestConfig().isEnabledSyncSendTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledSyncSendTest()) {
             syncSendTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledSyncSendTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledSyncSendTest()) {
             asyncSendTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledSubscribeTypeTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledSubscribeTypeTest()) {
             subscribeTypeTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledMessageFilterTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledMessageFilterTest()) {
             messageFilterTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledMessageSeekTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledMessageSeekTest()) {
             messageSeekTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledBroadcastConsumeTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledBroadcastConsumeTest()) {
             broadcastConsumeTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledMessageTtlTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledMessageTtlTest()) {
             messageTtlTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledDeadLetterQueueTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledDeadLetterQueueTest()) {
             deadLetterQueueTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledConsumerRetryTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledConsumerRetryTest()) {
             consumerRetryTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledDelayMessageTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledDelayMessageTest()) {
             delayMessageTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledScheduledMessageTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledScheduledMessageTest()) {
             scheduledMessageTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledMessageOrderTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledMessageOrderTest()) {
             messageOrderTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledGmMessageTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledGmMessageTest()) {
             gmMessageTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledGmTlsTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledGmTlsTest()) {
             gmTlsTest();
         }
-        if (cnmqProperties.getFunctionTestConfig().isEnabledMessagePriorityTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledMessagePriorityTest()) {
             messagePriorityTest();
         }
     }
@@ -147,14 +147,14 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                 log.info(FUNCTION_TEST, "发送成功，内容<{}>, 消息id<{}>", i, send);
             }
             log.info(FUNCTION_TEST, "--------同步发送消息测试完毕----------");
-        } catch (CnmqClientException e) {
+        } catch (TlqcnClientException e) {
             log.error("发送异常", e);
         } finally {
             try {
                 if (producer != null) {
                     producer.close();
                 }
-            } catch (CnmqClientException e) {
+            } catch (TlqcnClientException e) {
                 log.error("生产者关闭异常", e);
             }
         }
@@ -185,14 +185,14 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             }
             countDownLatch.await();
             log.info(FUNCTION_TEST, "--------异步发送消息测试完毕----------");
-        } catch (CnmqClientException | InterruptedException e) {
+        } catch (TlqcnClientException | InterruptedException e) {
             log.error("发送异常", e);
         } finally {
             try {
                 if (producer != null) {
                     producer.close();
                 }
-            } catch (CnmqClientException e) {
+            } catch (TlqcnClientException e) {
                 log.error("生产者关闭异常", e);
             }
         }
@@ -222,7 +222,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                             "consumer_" + i, subscriptionType, Schema.INT64);
                     consumers.add(consumer);
                     log.info(FUNCTION_TEST, "创建消费者<{}>成功", "consumer_" + i);
-                } catch (CnmqClientException e) {
+                } catch (TlqcnClientException e) {
                     log.error(FUNCTION_TEST, "创建消费者<{}>异常", "consumer_" + i, e);
                 }
             }
@@ -252,7 +252,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                 try {
                     consumer.close();
                     log.info("消费者<{}>关闭成功", consumer.getConsumerName());
-                } catch (CnmqClientException e) {
+                } catch (TlqcnClientException e) {
                     log.error("消费者关闭异常", e);
                 }
             });
@@ -260,7 +260,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             log.info(FUNCTION_TEST, "+++++++++++{}订阅类型测试完毕+++++++++++", subscriptionType);
             producer.close();
             log.info("生产者关闭成功");
-        } catch (InterruptedException | CnmqClientException e) {
+        } catch (InterruptedException | TlqcnClientException e) {
             log.error("订阅类型测试异常", e);
         }
     }
@@ -300,15 +300,15 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             tagFilter.close();
             sql92Filter.close();
             producer.close();
-        } catch (CnmqClientException | InterruptedException e) {
+        } catch (TlqcnClientException | InterruptedException e) {
             log.error("消息过滤测试异常", e);
         }
     }
 
     private Consumer<String> filterSubscribe(String subName, Map<String, String> subscriptionProperties)
-            throws CnmqClientException {
+            throws TlqcnClientException {
         log.info(FUNCTION_TEST, "{} 订阅成功，过滤参数 {}", subName, subscriptionProperties);
-        return cnmqClient.newConsumer(Schema.STRING)
+        return tlqcnClient.newConsumer(Schema.STRING)
                 .topic(topic)
                 .subscriptionName(subName)
                 .subscriptionType(SubscriptionType.Shared)
@@ -318,7 +318,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                     log.info(FUNCTION_TEST, "订阅名称<{}>消费消息<{}>", subName, msg.getValue());
                     try {
                         consumer.acknowledge(msg);
-                    } catch (CnmqClientException e) {
+                    } catch (TlqcnClientException e) {
                         log.error("消息确认异常", e);
                     }
 
@@ -335,7 +335,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         try {
             consumer = createConsumer(topic, null, "seek_sub",
                      "seek_consumer", SubscriptionType.Shared, Schema.INT64);
-        } catch (CnmqClientException e) {
+        } catch (TlqcnClientException e) {
             log.error("创建消费者异常", e);
         }
         Producer<Long> producer = null;
@@ -351,16 +351,16 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                 }
                 log.info(FUNCTION_TEST, "发送成功，内容<{}>, 消息id<{}>", i, send);
             }
-        } catch (CnmqClientException e) {
+        } catch (TlqcnClientException e) {
             log.error("发送异常", e);
         }
 
         try {
             Thread.sleep(3000);
-            cnmqAdmin.topics().resetCursor(topic, "seek_sub", messageId);
+            tlqcnAdmin.topics().resetCursor(topic, "seek_sub", messageId);
             log.info(FUNCTION_TEST, "重置游标成功，游标位置<{}>", messageId);
             Thread.sleep(3000);
-        } catch (InterruptedException | CnmqAdminException e) {
+        } catch (InterruptedException | TlqcnAdminException e) {
         }
 
         log.info(FUNCTION_TEST, "---------------消息回溯测试完毕-------------");
@@ -373,7 +373,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                 producer.close();
                 log.info("生产者关闭成功");
             }
-        } catch (CnmqClientException e) {
+        } catch (TlqcnClientException e) {
             log.error("消费者关闭异常", e);
         }
 
@@ -387,7 +387,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         for (int i = 0; i < 3; i++) {
             try {
                 int finalI = i;
-                Reader<Long> longReader = cnmqClient.newReader(Schema.INT64)
+                Reader<Long> longReader = tlqcnClient.newReader(Schema.INT64)
                         .topic(topic)
                         .readerName("reader_" + finalI)
                         .startMessageId(MessageId.latest)
@@ -397,7 +397,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                         .create();
                 readers.add(longReader);
                 log.info(FUNCTION_TEST, "创建reader<{}>成功", "reader_" + i);
-            } catch (CnmqClientException e) {
+            } catch (TlqcnClientException e) {
                 log.error("创建reader<{}>异常", "reader_" + i, e);
             }
         }
@@ -409,7 +409,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                 MessageId send = producer.send(i);
                 log.info(FUNCTION_TEST, "发送成功，内容<{}>, 消息id<{}>", i, send);
             }
-        } catch (CnmqClientException e) {
+        } catch (TlqcnClientException e) {
             log.error("发送异常", e);
         }
 
@@ -421,7 +421,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         readers.forEach(reader -> {
             try {
                 reader.close();
-            } catch (CnmqClientException e) {
+            } catch (TlqcnClientException e) {
                 log.error("reader关闭异常", e);
             } catch (IOException e) {
                 log.error("reader关闭异常", e);
@@ -431,7 +431,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             if (producer!= null) {
                 producer.close();
             }
-        } catch (CnmqClientException e) {
+        } catch (TlqcnClientException e) {
             log.error("生产者关闭异常", e);
         }
     }
@@ -468,15 +468,15 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             log.info(FUNCTION_TEST, "---------------死信队列测试完毕---------------");
             consumer1.close();
             consumer2.close();
-        } catch (CnmqClientException | InterruptedException e) {
+        } catch (TlqcnClientException | InterruptedException e) {
             log.error("测试出现异常", e);
         }
     }
     private <T> Consumer<T> createConsumer(String topic, String deadLetterTopic,
                                 String subName, String consumerName,
-                                SubscriptionType subscriptionType, Schema<T> schema) throws CnmqClientException {
+                                SubscriptionType subscriptionType, Schema<T> schema) throws TlqcnClientException {
         AtomicInteger count = new AtomicInteger(0);
-        ConsumerBuilder<T> consumerBuilder = cnmqClient.newConsumer(schema)
+        ConsumerBuilder<T> consumerBuilder = tlqcnClient.newConsumer(schema)
                 .topic(topic)
                 .consumerName(consumerName)
                 .subscriptionName(subName)
@@ -493,7 +493,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                     if (deadLetterTopic == null) {
                         try {
                             consumer.acknowledge(msg);
-                        } catch (CnmqClientException e) {
+                        } catch (TlqcnClientException e) {
                             log.error("签收消息失败", e);
                         }
                     } else {
@@ -535,7 +535,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             log.info(FUNCTION_TEST, "---------------延时消息测试完毕---------------");
             producer.close();
             consumer.close();
-        } catch (CnmqClientException | InterruptedException e) {
+        } catch (TlqcnClientException | InterruptedException e) {
             log.error("测试程序出现异常", e);
         }
     }
@@ -566,7 +566,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             log.info(FUNCTION_TEST, "---------------定时消息测试完毕---------------");
             producer.close();
             consumer.close();
-        } catch (CnmqClientException | InterruptedException e) {
+        } catch (TlqcnClientException | InterruptedException e) {
             log.error("测试程序出现异常", e);
         }
     }
@@ -592,7 +592,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             log.info(FUNCTION_TEST, "---------------消息有序性测试完毕---------------");
             producer.close();
             consumer.close();
-        } catch (CnmqClientException | InterruptedException e) {
+        } catch (TlqcnClientException | InterruptedException e) {
             log.error("测试程序出现异常", e);
         }
     }
@@ -602,7 +602,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         try {
             clearAndCreateTopic(topic);
             log.info(FUNCTION_TEST, "---------------国密消息测试开始---------------");
-            Consumer<String> consumer = cnmqClient.newConsumer(Schema.STRING)
+            Consumer<String> consumer = tlqcnClient.newConsumer(Schema.STRING)
                     .topic(topic)
                     .subscriptionName("gmTest")
                     .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
@@ -610,7 +610,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                     .cryptoKeyReader(new RawFileKeyReader(publicKeyPath, privateKeyPath))
                     .subscribe();
 
-            Producer<String> producer = cnmqClient.newProducer(Schema.STRING)
+            Producer<String> producer = tlqcnClient.newProducer(Schema.STRING)
                     .topic(topic)
                     .addEncryptionKey("key1")
                     .messageCrypto(new MessageCryptoGm4Producer())
@@ -627,7 +627,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             log.info(FUNCTION_TEST, "---------------国密消息测试完毕---------------");
             consumer.close();
             producer.close();
-        } catch (CnmqClientException e) {
+        } catch (TlqcnClientException e) {
             log.error("测试程序出现异常", e);
         }
     }
@@ -649,7 +649,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                 clearAndCreateTopic(topic + i);
             }
             PriorityUtil.startTest(totalPriority, topic, serviceUrl, false);
-        } catch (ExecutionException | InterruptedException | CnmqClientException e) {
+        } catch (ExecutionException | InterruptedException | TlqcnClientException e) {
             log.error("测试程序出现异常", e);
         }
     }

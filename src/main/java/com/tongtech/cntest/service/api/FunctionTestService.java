@@ -1,10 +1,6 @@
 package com.tongtech.cntest.service.api;
 
 
-import com.tongtech.cnmq.client.admin.CnmqAdminException;
-import com.tongtech.cnmq.client.api.CnmqClientException;
-import java.util.concurrent.ExecutionException;
-
 /**
  * 功能测试服务
  */

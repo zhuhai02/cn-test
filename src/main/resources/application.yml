@@ -5,42 +5,42 @@ spring:
   name: tlq-cn-demo
 
 
-cnmq:
-  enable-perf-sync-test: true
-  enable-perf-async-test: true
+tlqcn:
+  enable-perf-sync-test: false
+  enable-perf-async-test: false
   client:
-    service-url: pulsar://10.10.22.174:6650
-    service-http-url: http://10.10.22.174:8080
+    service-url: tlqcn://10.10.22.166:31176
+    service-http-url: http://10.10.22.166:30431
     authentication:
       enabled: false
       token:
     failover-config:
-      primary-url: pulsar://127.0.0.1:6650
-      secondary-url: pulsar://10.10.22.162:15930
+      primary-url: pulsar://10.10.22.174:6650
+      secondary-url: pulsar://10.10.22.174:6650
       delay: 30
       switch-back-delay: 60
       check-interval: 2000
       check-topic: "persistent://public/default/check_topic"
   function-test-config:
     enabled: true
-    topic: "persistent://public/default/function_test"
+    topic: "persistent://public/default/topic1"
     public-key-path: gm_-public-key.pem
     private-key-path: gm_-private-key.pem
-    enabled-sync-send-test: true
-    enabled-async--send-test: true
-    enabled-subscribe-type-test: true
-    enabled-message-filter-test: true
-    enabled-message-seek-test: true
-    enabled-broadcast-consume-test: true
-    enabled-message-ttl-test: true
-    enabled-dead-letter-queue-test: true
-    enabled-consumer-retry-test: true
-    enabled-delay-message-test: true
-    enabled-scheduled-message-test: true
-    enabled-message-order-test: true
+    enabled-sync-send-test: false
+    enabled-async--send-test: false
+    enabled-subscribe-type-test: false
+    enabled-message-filter-test: false
+    enabled-message-seek-test: false
+    enabled-broadcast-consume-test: false
+    enabled-message-ttl-test: false
+    enabled-dead-letter-queue-test: false
+    enabled-consumer-retry-test: false
+    enabled-delay-message-test: false
+    enabled-scheduled-message-test: false
+    enabled-message-order-test: false
     enabled-gm-message-test: true
-    enabled-gm-tls-test: true
-    enabled-message-priority-test: true
+    enabled-gm-tls-test: false
+    enabled-message-priority-test: false
   perf-param-configs:
     enabled: false
     topic: "persistent://public/default/perf_topic"

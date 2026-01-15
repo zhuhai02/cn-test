@@ -1,10 +1,10 @@
 package com.tongtech.cntest.service;
 
-import com.tongtech.cnmq.client.admin.CnmqAdmin;
-import com.tongtech.cnmq.client.api.*;
-import com.tongtech.cnmq.shade.io.netty.channel.DefaultEventLoop;
-import com.tongtech.cnmq.shade.io.netty.channel.EventLoop;
-import com.tongtech.cntest.config.CnmqProperties;
+import com.tongtech.tlqcn.client.admin.TlqcnAdmin;
+import com.tongtech.tlqcn.client.api.*;
+import com.tongtech.tlqcn.shade.io.netty.channel.DefaultEventLoop;
+import com.tongtech.tlqcn.shade.io.netty.channel.EventLoop;
+import com.tongtech.cntest.config.TlqcnProperties;
 import com.tongtech.cntest.service.api.PerfTestService;
 import com.tongtech.cntest.utils.PaddingDecimalFormat;
 import java.text.DecimalFormat;
@@ -18,7 +18,6 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.Marker;
 import org.slf4j.MarkerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -50,27 +49,27 @@ public class PerfTestServiceImpl implements PerfTestService {
     private final long closeTime;
 
     private final ExecutorService perfTestExecutorService;
-    private final CnmqClient cnmqClient;
-    private final CnmqAdmin cnmqAdmin;
-    private final CnmqProperties cnmqProperties;
+    private final TlqcnClient tlqcnClient;
+    private final TlqcnAdmin tlqcnAdmin;
+    private final TlqcnProperties tlqcnProperties;
 
     @Autowired
-    public PerfTestServiceImpl(CnmqClient cnmqClient, CnmqAdmin cnmqAdmin,
+    public PerfTestServiceImpl(TlqcnClient tlqcnClient, TlqcnAdmin tlqcnAdmin,
                                ExecutorService perfTestExecutorService,
-                               CnmqProperties cnmqProperties) {
-        this.cnmqClient = cnmqClient;
-        this.cnmqAdmin = cnmqAdmin;
+                               TlqcnProperties tlqcnProperties) {
+        this.tlqcnClient = tlqcnClient;
+        this.tlqcnAdmin = tlqcnAdmin;
         this.perfTestExecutorService = perfTestExecutorService;
-        this.cnmqProperties = cnmqProperties;
-        this.topic = cnmqProperties.getPerfParamConfigs().getTopic();
-        this.enabled = cnmqProperties.getPerfParamConfigs().isEnabled();
-        this.batchingMaxPublishDelay= cnmqProperties.getPerfParamConfigs()
+        this.tlqcnProperties = tlqcnProperties;
+        this.topic = tlqcnProperties.getPerfParamConfigs().getTopic();
+        this.enabled = tlqcnProperties.getPerfParamConfigs().isEnabled();
+        this.batchingMaxPublishDelay= tlqcnProperties.getPerfParamConfigs()
                 .getBatchingMaxPublishDelay();
-        this.testTimePerCase= cnmqProperties.getPerfParamConfigs().getTestTimePerCase();
-        this.batchingMaxMessages= cnmqProperties.getPerfParamConfigs().getBatchingMaxMessages();
-        this.logInterval= cnmqProperties.getPerfParamConfigs().getLogInterval();
-        this.caseInterval= cnmqProperties.getPerfParamConfigs().getCaseInterval();
-        this.closeTime= cnmqProperties.getPerfParamConfigs().getCloseTime();
+        this.testTimePerCase= tlqcnProperties.getPerfParamConfigs().getTestTimePerCase();
+        this.batchingMaxMessages= tlqcnProperties.getPerfParamConfigs().getBatchingMaxMessages();
+        this.logInterval= tlqcnProperties.getPerfParamConfigs().getLogInterval();
+        this.caseInterval= tlqcnProperties.getPerfParamConfigs().getCaseInterval();
+        this.closeTime= tlqcnProperties.getPerfParamConfigs().getCloseTime();
     }
 
     /**
@@ -78,15 +77,15 @@ public class PerfTestServiceImpl implements PerfTestService {
      */
     private void clearAndCreateTopic(int partitionNum) {
 //        try {
-//            cnmqAdmin.topics().deletePartitionedTopic(topic, true);
+//            tlqcnAdmin.topics().deletePartitionedTopic(topic, true);
 //            log.info("删除topic<{}>成功", topic);
-//        } catch (CnmqAdminException e) {
+//        } catch (TlqcnAdminException e) {
 //        }
 //
 //        try {
-//            cnmqAdmin.topics().createPartitionedTopic(topic, partitionNum);
+//            tlqcnAdmin.topics().createPartitionedTopic(topic, partitionNum);
 //            log.info("创建topic<{}>成功", topic);
-//        } catch (CnmqAdminException e) {
+//        } catch (TlqcnAdminException e) {
 //            log.error("创建topic<{}>异常", topic, e);
 //        }
     }
@@ -94,7 +93,7 @@ public class PerfTestServiceImpl implements PerfTestService {
 
     private Producer<byte[]> createProducer() {
         try {
-            return cnmqClient.newProducer(Schema.BYTES)
+            return tlqcnClient.newProducer(Schema.BYTES)
                     .topic(topic)
                     .sendTimeout(0, TimeUnit.SECONDS)
                     .batchingMaxPublishDelay(batchingMaxPublishDelay, TimeUnit.MILLISECONDS)
@@ -102,7 +101,7 @@ public class PerfTestServiceImpl implements PerfTestService {
                     .batchingMaxBytes(5 * 1024 * 1024)
                     .blockIfQueueFull(true)
                     .create();
-        } catch (CnmqClientException e) {
+        } catch (TlqcnClientException e) {
             log.error("创建producer异常", e);
         }
         return null;
@@ -110,7 +109,7 @@ public class PerfTestServiceImpl implements PerfTestService {
 
 
     @Override
-    @Scheduled(cron = "${cnmq.perf-param-configs.cron}")
+    @Scheduled(cron = "${tlqcn.perf-param-configs.cron}")
     public void startTest() {
         if (!enabled) {
             log.info("性能测试未开启");
@@ -146,18 +145,18 @@ public class PerfTestServiceImpl implements PerfTestService {
             }
         });
 
-        if (cnmqProperties.getPerfParamConfigs().isEnablePerfSyncTest()) {
+        if (tlqcnProperties.getPerfParamConfigs().isEnablePerfSyncTest()) {
             startTest(true);
         }
 
-        if (cnmqProperties.getPerfParamConfigs().isEnablePerfAsyncTest()) {
+        if (tlqcnProperties.getPerfParamConfigs().isEnablePerfAsyncTest()) {
             startTest(false);
         }
         isTesting.set(false);
     }
 
     private void startTest(boolean isSyncTest) {
-        for (CnmqProperties.PerfCaseConfig config : cnmqProperties.getPerfCaseConfigs()) {
+        for (TlqcnProperties.PerfCaseConfig config : tlqcnProperties.getPerfCaseConfigs()) {
             if (isSyncTest) {
                 producerLog.info(PERF_PRODUCER_TEST, "同步开始测试，生产者数量：{}，消费者数量：{}，主题分区数量：{}，消息大小：{}，每个生产者线程数量：{}",
                         config.getProducerNum(), config.getConsumerNum(), config.getTopicPartitionNum(),
@@ -305,7 +304,7 @@ public class PerfTestServiceImpl implements PerfTestService {
                     producer.send(new byte[msgSize]);
                     messagesSent.increment();
                     bytesSent.add(msgSize);
-                } catch (CnmqClientException e) {
+                } catch (TlqcnClientException e) {
                     log.error("发送消息异常", e);
                 }
             }
@@ -335,7 +334,7 @@ public class PerfTestServiceImpl implements PerfTestService {
         }
         try {
             producer.close();
-        } catch (CnmqClientException e) {
+        } catch (TlqcnClientException e) {
             log.error("关闭producer异常", e);
         }
     }
@@ -368,14 +367,14 @@ public class PerfTestServiceImpl implements PerfTestService {
         }
         try {
             producer.close();
-        } catch (CnmqClientException e) {
+        } catch (TlqcnClientException e) {
             log.error("关闭producer异常", e);
         }
     }
 
     private void startConsume(boolean syncAck) {
         try {
-            Consumer<byte[]> consumer = cnmqClient.newConsumer(Schema.BYTES)
+            Consumer<byte[]> consumer = tlqcnClient.newConsumer(Schema.BYTES)
                     .topic(topic)
                     .subscriptionName("perf_test_subscription")
                     .subscriptionType(SubscriptionType.Shared)
@@ -387,7 +386,7 @@ public class PerfTestServiceImpl implements PerfTestService {
                         if (syncAck) {
                             try {
                                 consumer1.acknowledge(msg);
-                            } catch (CnmqClientException e) {
+                            } catch (TlqcnClientException e) {
                                 log.error("ack error", e);
                             }
                         } else {
@@ -405,10 +404,10 @@ public class PerfTestServiceImpl implements PerfTestService {
             }
             try {
                 consumer.close();
-            } catch (CnmqClientException e) {
+            } catch (TlqcnClientException e) {
                 log.error("关闭pconsumer异常", e);
             }
-        } catch (CnmqClientException e) {
+        } catch (TlqcnClientException e) {
             log.error("创建consumer异常", e);
         }
     }

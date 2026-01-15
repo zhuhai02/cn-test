@@ -1,14 +1,14 @@
 package com.tongtech.cntest.utils;
 
-import com.tongtech.cnmq.client.api.BatchReceivePolicy;
-import com.tongtech.cnmq.client.api.CnmqClient;
-import com.tongtech.cnmq.client.api.CnmqClientException;
-import com.tongtech.cnmq.client.api.Consumer;
-import com.tongtech.cnmq.client.api.Messages;
-import com.tongtech.cnmq.client.api.Producer;
-import com.tongtech.cnmq.client.api.Schema;
-import com.tongtech.cnmq.client.api.SubscriptionInitialPosition;
-import com.tongtech.cnmq.client.api.SubscriptionType;
+import com.tongtech.tlqcn.client.api.BatchReceivePolicy;
+import com.tongtech.tlqcn.client.api.TlqcnClient;
+import com.tongtech.tlqcn.client.api.TlqcnClientException;
+import com.tongtech.tlqcn.client.api.Consumer;
+import com.tongtech.tlqcn.client.api.Messages;
+import com.tongtech.tlqcn.client.api.Producer;
+import com.tongtech.tlqcn.client.api.Schema;
+import com.tongtech.tlqcn.client.api.SubscriptionInitialPosition;
+import com.tongtech.tlqcn.client.api.SubscriptionType;
 import java.text.MessageFormat;
 import java.util.HashMap;
 import java.util.Map;
@@ -23,7 +23,7 @@ public class PriorityUtil {
 
     private static final String subName = "sub";
 
-    private static CnmqClient client;
+    private static TlqcnClient client;
 
     private static Map<Integer, Producer<byte[]>> priorityProducerMap = new ConcurrentHashMap<>();
 
@@ -33,7 +33,7 @@ public class PriorityUtil {
 
 
     public static void startTest(int totalPriority, String topicPrefix, String serviceUrl, boolean isAbsolutePriority)
-            throws ExecutionException, InterruptedException, CnmqClientException {
+            throws ExecutionException, InterruptedException, TlqcnClientException {
         init(serviceUrl, topicPrefix, totalPriority);
         log.info("------------------消息优先级测试开始-------------------------");
         int messageNum = 20;
@@ -69,8 +69,8 @@ public class PriorityUtil {
         client.close();
     }
 
-    private static void init(String serviceUrl, String topicPrefix, int totalPriority) throws ExecutionException, InterruptedException, CnmqClientException {
-        client = CnmqClient.builder()
+    private static void init(String serviceUrl, String topicPrefix, int totalPriority) throws ExecutionException, InterruptedException, TlqcnClientException {
+        client = TlqcnClient.builder()
                 .serviceUrl(serviceUrl)
                 .build();
         // 初始化对应优先级的生产者
@@ -109,7 +109,7 @@ public class PriorityUtil {
 //        receiveTask();
     }
 
-    private static void send(int priority, byte[] bytes) throws CnmqClientException {
+    private static void send(int priority, byte[] bytes) throws TlqcnClientException {
         priorityProducerMap.get(priority).send(bytes);
     }
 

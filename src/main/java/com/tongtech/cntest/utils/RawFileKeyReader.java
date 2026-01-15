@@ -4,14 +4,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Map;
-import com.tongtech.cnmq.client.api.CryptoKeyReader;
-import com.tongtech.cnmq.client.api.EncryptionKeyInfo;
-import com.tongtech.cnmq.client.api.CnmqClientException;
+import com.tongtech.tlqcn.client.api.CryptoKeyReader;
+import com.tongtech.tlqcn.client.api.EncryptionKeyInfo;
+import com.tongtech.tlqcn.client.api.TlqcnClientException;
 
 public class RawFileKeyReader implements CryptoKeyReader {
     String publicKeyFile = "";
     String privateKeyFile = "";
-    public RawFileKeyReader(String pubKeyFile, String privKeyFile) throws CnmqClientException {
+    public RawFileKeyReader(String pubKeyFile, String privKeyFile) throws TlqcnClientException {
         publicKeyFile = pubKeyFile;
         privateKeyFile = privKeyFile;
     }

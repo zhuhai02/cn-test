@@ -12,12 +12,16 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Marker;
 import org.slf4j.MarkerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -37,7 +41,11 @@ public class PerfTestServiceImpl implements PerfTestService {
     static final DecimalFormat THROUGHPUTFORMAT = new PaddingDecimalFormat("0.0", 8);
     private final AtomicBoolean isStop = new AtomicBoolean(false);
 
-    private final AtomicBoolean isTesting = new AtomicBoolean(false);
+    private final AtomicBoolean isTesting = new AtomicBoolean(true);
+
+    private final AtomicLong produceNum = new AtomicLong(0);
+
+    private final AtomicLong consummerNum = new AtomicLong(0);
 
     private final String topic;
     private final boolean enabled;
@@ -110,12 +118,14 @@ public class PerfTestServiceImpl implements PerfTestService {
 
     @Override
     @Scheduled(cron = "${tlqcn.perf-param-configs.cron}")
+    //@EventListener(ApplicationReadyEvent.class)
     public void startTest() {
         if (!enabled) {
             log.info("性能测试未开启");
             return;
         }
         isTesting.set(true);
+        log.info("性能测试开启");
         perfTestExecutorService.execute(() -> {
             long oldTime = System.nanoTime();
             while (isTesting.get()) {
@@ -134,12 +144,12 @@ public class PerfTestServiceImpl implements PerfTestService {
                 double receivedThroughput = bytesReceived.sumThenReset() / elapsed / 1024 / 1024;
 
                 producerLog.info(PERF_PRODUCER_TEST,
-                        "生产指标: {} msg/s --- {} MB/s",
-                        THROUGHPUTFORMAT.format(sentRate), THROUGHPUTFORMAT.format(sentThroughput));
+                        "生产指标: {} msg/s --- {} MB/s ---{} msg",
+                        THROUGHPUTFORMAT.format(sentRate), THROUGHPUTFORMAT.format(sentThroughput),produceNum.get());
 
                 consumerLog.info(PERF_CONSUMER_TEST,
-                        "消费指标: {}  msg/s --- {} MB/s ",
-                        THROUGHPUTFORMAT.format(receivedRate), THROUGHPUTFORMAT.format(receivedThroughput));
+                        "消费指标: {}  msg/s --- {} MB/s --- {}msg ",
+                        THROUGHPUTFORMAT.format(receivedRate), THROUGHPUTFORMAT.format(receivedThroughput),consummerNum.get());
 
                 oldTime = now;
             }
@@ -304,6 +314,7 @@ public class PerfTestServiceImpl implements PerfTestService {
                     producer.send(new byte[msgSize]);
                     messagesSent.increment();
                     bytesSent.add(msgSize);
+                    produceNum.incrementAndGet();
                 } catch (TlqcnClientException e) {
                     log.error("发送消息异常", e);
                 }
@@ -318,6 +329,7 @@ public class PerfTestServiceImpl implements PerfTestService {
                             producer.sendAsync(new byte[msgSize]).get();
                             messagesSent.increment();
                             bytesSent.add(msgSize);
+                            produceNum.incrementAndGet();
                         } catch (ExecutionException | InterruptedException e) {
                             log.error("发送消息异常", e);
                         }
@@ -354,6 +366,7 @@ public class PerfTestServiceImpl implements PerfTestService {
                             .thenAccept(messageId -> {
                                messagesSent.increment();
                                bytesSent.add(msgSize);
+                               produceNum.incrementAndGet();
                             });
                 }
             });
@@ -386,11 +399,13 @@ public class PerfTestServiceImpl implements PerfTestService {
                         if (syncAck) {
                             try {
                                 consumer1.acknowledge(msg);
+                                consummerNum.incrementAndGet();
                             } catch (TlqcnClientException e) {
                                 log.error("ack error", e);
                             }
                         } else {
                             consumer1.acknowledgeAsync(msg);
+                            consummerNum.incrementAndGet();
                         }
                     })
                     .subscribe();

@@ -60,6 +60,9 @@ public class TlqcnProperties {
         private boolean enabledGmMessageTest;
         private boolean enabledGmTlsTest;
         private boolean enabledMessagePriorityTest;
+        private int consumerNum;
+        private int topicPartitionNum;
+        private int msgNum;
     }
 
     @Data

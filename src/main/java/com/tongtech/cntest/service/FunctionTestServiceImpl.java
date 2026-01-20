@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Service
 public class FunctionTestServiceImpl implements FunctionTestService {
     private static final Logger log = LoggerFactory.getLogger("FUNCTION_TEST_LOGGER");
-    private static final Marker FUNCTION_TEST = MarkerFactory.getMarker("FUNCTION_TEST") ;
+    private static final Marker FUNCTION_TEST = MarkerFactory.getMarker("FUNCTION_TEST");
 
     private final TlqcnClient tlqcnClient;
     private final TlqcnAdmin tlqcnAdmin;
@@ -45,6 +45,9 @@ public class FunctionTestServiceImpl implements FunctionTestService {
     private final String publicKeyPath;
     private final String privateKeyPath;
     private final String serviceUrl;
+    private final int consumerNum;
+    private final int topicPartitionNum;
+    private final int msgNum;
 
     @Autowired
     public FunctionTestServiceImpl(TlqcnClient tlqcnClient, TlqcnAdmin tlqcnAdmin,
@@ -56,10 +59,14 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         this.publicKeyPath = tlqcnProperties.getFunctionTestConfig().getPublicKeyPath();
         this.privateKeyPath = tlqcnProperties.getFunctionTestConfig().getPrivateKeyPath();
         this.serviceUrl = tlqcnProperties.getClient().getServiceUrl();
+        this.consumerNum = tlqcnProperties.getFunctionTestConfig().getConsumerNum();
+        this.topicPartitionNum = tlqcnProperties.getFunctionTestConfig().getTopicPartitionNum();
+        this.msgNum = tlqcnProperties.getFunctionTestConfig().getMsgNum();
     }
 
     /**
      * 测试前先清理topic
+     *
      * @param topic
      */
     private void clearAndCreateTopic(String topic) {
@@ -77,7 +84,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         }
     }
 
-    private  <T> Producer<T> createProducer(String topic, Schema<T> schema) throws TlqcnClientException {
+    private <T> Producer<T> createProducer(String topic, Schema<T> schema) throws TlqcnClientException {
         ProducerBuilder<T> builder = tlqcnClient.newProducer(schema)
                 // 必要参数。消息发送的目标主题。
                 .topic(topic)
@@ -140,15 +147,44 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         Producer<Long> producer = null;
         log.info(FUNCTION_TEST, "--------同步发送消息测试开始----------");
         try {
-            producer = createProducer(topic, Schema.INT64);
-            for (long i = 0; i < 10 ; i++) {
-                log.info(FUNCTION_TEST, "发送消息，内容<{}>", i);
-                MessageId send = producer.send(i);
-                log.info(FUNCTION_TEST, "发送成功，内容<{}>, 消息id<{}>", i, send);
+            List<Consumer<Long>> consumers = new ArrayList<>();
+            for (int i = 0; i < consumerNum; i++) {
+                try {
+                    Consumer<Long> consumer = createConsumer(topic, null, "Sync_sub",
+                            "sync_consumer_" + i, SubscriptionType.Shared, Schema.INT64);
+                    consumers.add(consumer);
+                    log.info(FUNCTION_TEST, "创建消费者<{}>成功", "sync_consumer_" + i);
+                } catch (TlqcnClientException e) {
+                    log.error(FUNCTION_TEST, "创建消费者<{}>异常", "sync_consumer_" + i, e);
+                }
             }
+
+            Thread.sleep(3000);
+            producer = createProducer(topic, Schema.INT64);
+            for (long i = 0; i < msgNum; i++) {
+                log.info(FUNCTION_TEST, "同步发送消息，内容<{}>", i);
+                long sendStartTime = System.currentTimeMillis();
+                MessageId send = producer.send(i);
+                long sendFinishTime = System.currentTimeMillis();
+                log.info(FUNCTION_TEST, "同步发送成功，内容<{}>, 消息id<{}>, time<{}ms>", i, send,(sendFinishTime - sendStartTime));
+            }
+
+            Thread.sleep(1000*3);
+            consumers.forEach(consumer -> {
+                try {
+                    consumer.close();
+                    log.info("消费者<{}>关闭成功", consumer.getConsumerName());
+                } catch (TlqcnClientException e) {
+                    log.error("消费者关闭异常", e);
+                }
+            });
+            producer.close();
+            log.info("生产者关闭成功");
             log.info(FUNCTION_TEST, "--------同步发送消息测试完毕----------");
         } catch (TlqcnClientException e) {
             log.error("发送异常", e);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         } finally {
             try {
                 if (producer != null) {
@@ -166,14 +202,29 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         Producer<Long> producer = null;
         log.info(FUNCTION_TEST, "--------异步发送消息测试开始----------");
         try {
+            List<Consumer<Long>> consumers = new ArrayList<>();
+            for (int i = 0; i < consumerNum; i++) {
+                try {
+                    Consumer<Long> consumer = createConsumer(topic, null, "Aync_sub",
+                            "aync_consumer_" + i, SubscriptionType.Shared, Schema.INT64);
+                    consumers.add(consumer);
+                    log.info(FUNCTION_TEST, "创建消费者<{}>成功", "aync_consumer_" + i);
+                } catch (TlqcnClientException e) {
+                    log.error(FUNCTION_TEST, "创建消费者<{}>异常", "aync_consumer_" + i, e);
+                }
+            }
+            Thread.sleep(3000);
+
             producer = createProducer(topic, Schema.INT64);
             CountDownLatch countDownLatch = new CountDownLatch(10);
-            for (long i = 0; i < 10 ; i++) {
-                log.info(FUNCTION_TEST, "发送消息，内容<{}>", i);
+            for (long i = 0; i < msgNum; i++) {
+                log.info(FUNCTION_TEST, "异步发送消息，内容<{}>", i);
                 long finalI = i;
+                long sendStartTime = System.currentTimeMillis();
                 producer.sendAsync(i)
                         .thenAccept(send -> {
-                            log.info(FUNCTION_TEST, "发送成功，内容<{}>, 消息id<{}>", finalI, send);
+                            long sendFinishTime = System.currentTimeMillis();
+                            log.info(FUNCTION_TEST, "异步发送成功，内容<{}>, 消息id<{}>, time<{}ms>", finalI, send,(sendFinishTime - sendStartTime));
                             countDownLatch.countDown();
                         })
                         .exceptionally(throwable -> {
@@ -184,6 +235,16 @@ public class FunctionTestServiceImpl implements FunctionTestService {
 
             }
             countDownLatch.await();
+
+            Thread.sleep(3000);
+            consumers.forEach(consumer -> {
+                try {
+                    consumer.close();
+                    log.info("消费者<{}>关闭成功", consumer.getConsumerName());
+                } catch (TlqcnClientException e) {
+                    log.error("消费者关闭异常", e);
+                }
+            });
             log.info(FUNCTION_TEST, "--------异步发送消息测试完毕----------");
         } catch (TlqcnClientException | InterruptedException e) {
             log.error("发送异常", e);
@@ -201,22 +262,22 @@ public class FunctionTestServiceImpl implements FunctionTestService {
     @Override
     public void subscribeTypeTest() {
         log.info(FUNCTION_TEST, "--------订阅类型测试开始----------");
-        subscribeTest("Exclusive_sub", SubscriptionType.Exclusive);
-        subscribeTest("Failover_sub", SubscriptionType.Failover);
-        subscribeTest("Shared_sub", SubscriptionType.Shared);
-        subscribeTest("Key_Shared_sub", SubscriptionType.Key_Shared);
+        subscribeTest("Exclusive_sub", SubscriptionType.Exclusive, consumerNum);
+        subscribeTest("Failover_sub", SubscriptionType.Failover, consumerNum);
+        subscribeTest("Shared_sub", SubscriptionType.Shared, consumerNum);
+        subscribeTest("Key_Shared_sub", SubscriptionType.Key_Shared, consumerNum);
         log.info(FUNCTION_TEST, "--------订阅类型测试完毕----------");
     }
 
     /**
      * 独占订阅测试
      */
-    private void subscribeTest(String subName, SubscriptionType subscriptionType) {
+    private void subscribeTest(String subName, SubscriptionType subscriptionType, int consumerNum) {
         clearAndCreateTopic(topic);
         try {
             log.info(FUNCTION_TEST, "+++++++++++{}订阅类型测试开始+++++++++++", subscriptionType);
             List<Consumer<Long>> consumers = new ArrayList<>();
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < consumerNum; i++) {
                 try {
                     Consumer<Long> consumer = createConsumer(topic, null, subName,
                             "consumer_" + i, subscriptionType, Schema.INT64);
@@ -228,7 +289,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             }
             Thread.sleep(3000);
             Producer<Long> producer = createProducer(topic, Schema.INT64);
-            for (long i = 0; i < 100 ; i++) {
+            for (long i = 0; i < msgNum; i++) {
                 if (subscriptionType == SubscriptionType.Failover && i == 50) {
                     Consumer<Long> remove = consumers.remove(0);
                     remove.close();
@@ -238,9 +299,9 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                 MessageId send;
                 if (subscriptionType == SubscriptionType.Key_Shared) {
                     send = producer.newMessage()
-                           .key(String.valueOf(i))
-                           .value(i)
-                           .send();
+                            .key(String.valueOf(i))
+                            .value(i)
+                            .send();
                 } else {
                     send = producer.send(i);
                 }
@@ -334,7 +395,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         log.info(FUNCTION_TEST, "---------------消息回溯测试开始------------------");
         try {
             consumer = createConsumer(topic, null, "seek_sub",
-                     "seek_consumer", SubscriptionType.Shared, Schema.INT64);
+                    "seek_consumer", SubscriptionType.Shared, Schema.INT64);
         } catch (TlqcnClientException e) {
             log.error("创建消费者异常", e);
         }
@@ -343,7 +404,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         try {
             producer = createProducer(topic, Schema.INT64);
             messageId = null;
-            for (long i = 0; i < 10 ; i++) {
+            for (long i = 0; i < 10; i++) {
                 log.info(FUNCTION_TEST, "发送消息，内容<{}>", i);
                 MessageId send = producer.send(i);
                 if (i == 5) {
@@ -369,7 +430,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                 consumer.close();
                 log.info("消费者<{}>关闭成功", consumer.getConsumerName());
             }
-            if (producer!= null) {
+            if (producer != null) {
                 producer.close();
                 log.info("生产者关闭成功");
             }
@@ -404,7 +465,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         Producer<Long> producer = null;
         try {
             producer = createProducer(topic, Schema.INT64);
-            for (long i = 0; i < 10 ; i++) {
+            for (long i = 0; i < 10; i++) {
                 log.info(FUNCTION_TEST, "发送消息，内容<{}>", i);
                 MessageId send = producer.send(i);
                 log.info(FUNCTION_TEST, "发送成功，内容<{}>, 消息id<{}>", i, send);
@@ -428,7 +489,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             }
         });
         try {
-            if (producer!= null) {
+            if (producer != null) {
                 producer.close();
             }
         } catch (TlqcnClientException e) {
@@ -455,7 +516,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                     deadLetterTopic + "_consumer", SubscriptionType.Shared, Schema.STRING);
 
             Producer<String> producer = createProducer(topic, Schema.STRING);
-            for (int i = 0; i < 1; i++) {
+            for (int i = 0; i < 5; i++) {
                 String message = "消息测试-" + i;
 //                producer.sendAsync(message);
                 MessageId send = producer.send(message);
@@ -472,9 +533,10 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             log.error("测试出现异常", e);
         }
     }
+
     private <T> Consumer<T> createConsumer(String topic, String deadLetterTopic,
-                                String subName, String consumerName,
-                                SubscriptionType subscriptionType, Schema<T> schema) throws TlqcnClientException {
+                                           String subName, String consumerName,
+                                           SubscriptionType subscriptionType, Schema<T> schema) throws TlqcnClientException {
         AtomicInteger count = new AtomicInteger(0);
         ConsumerBuilder<T> consumerBuilder = tlqcnClient.newConsumer(schema)
                 .topic(topic)
@@ -501,7 +563,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                         log.info(FUNCTION_TEST, "消费者<{}>不签收消息<{}>", consumer.getConsumerName(), msg.getValue());
                     }
                 });
-        if (deadLetterTopic!= null) {
+        if (deadLetterTopic != null) {
             consumerBuilder.deadLetterPolicy(DeadLetterPolicy.builder()
                     .maxRedeliverCount(2)
                     .deadLetterTopic(deadLetterTopic)
@@ -524,7 +586,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                     "delay_sub_consumer", SubscriptionType.Shared, Schema.STRING);
 
             Producer<String> producer = createProducer(topic, Schema.STRING);
-            long delay = 10;
+            long delay = 100;
             MessageId send1 = producer.newMessage()
                     .deliverAfter(delay, TimeUnit.SECONDS)
                     .value("延时消息!")
@@ -578,7 +640,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         try {
             Producer<Long> producer = createProducer(topic, Schema.INT64);
 
-            for (long i = 0; i < 10 ; i++) {
+            for (long i = 0; i < 10; i++) {
                 log.info(FUNCTION_TEST, "发送消息，内容<{}>", i);
                 MessageId send = producer.send(i);
                 log.info(FUNCTION_TEST, "发送成功，内容<{}>, 消息id<{}>", i, send);

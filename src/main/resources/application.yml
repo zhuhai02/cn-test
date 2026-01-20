@@ -6,28 +6,26 @@ spring:
 
 
 tlqcn:
-  enable-perf-sync-test: false
-  enable-perf-async-test: false
   client:
-    service-url: tlqcn://10.10.22.166:31176
-    service-http-url: http://10.10.22.166:30431
+    service-url: tlqcn://10.10.22.175:6650
+    service-http-url: http://10.10.22.175:8080
     authentication:
       enabled: false
       token:
     failover-config:
-      primary-url: pulsar://10.10.22.174:6650
-      secondary-url: pulsar://10.10.22.174:6650
+      primary-url: tlqcn://10.10.22.175:6650
+      secondary-url: tlqcn://10.10.22.175:6650
       delay: 30
       switch-back-delay: 60
       check-interval: 2000
       check-topic: "persistent://public/default/check_topic"
   function-test-config:
-    enabled: true
+    enabled: false
     topic: "persistent://public/default/topic1"
     public-key-path: gm_-public-key.pem
     private-key-path: gm_-private-key.pem
-    enabled-sync-send-test: false
-    enabled-async--send-test: false
+    enabled-sync-send-test: true
+    enabled-async--send-test: true
     enabled-subscribe-type-test: false
     enabled-message-filter-test: false
     enabled-message-seek-test: false
@@ -38,23 +36,28 @@ tlqcn:
     enabled-delay-message-test: false
     enabled-scheduled-message-test: false
     enabled-message-order-test: false
-    enabled-gm-message-test: true
+    enabled-gm-message-test: false
     enabled-gm-tls-test: false
     enabled-message-priority-test: false
+    consumer-num: 1
+    topic-partition-num: 1
+    msg-num: 100
   perf-param-configs:
-    enabled: false
+    enabled: true
     topic: "persistent://public/default/perf_topic"
+    enable-perf-sync-test: true
+    enable-perf-async-test: true
     batching-max-publish-delay: 10
     batching-max-messages: 1000
     # 每一个测试用例执行的时间
-    test-time-per-case: 600_000
+    test-time-per-case: 10_000
     # 性能日志记录时间间隔
     log-interval: 10_000
     # 每一个测试用例之间的间隔
     case-interval: 60_000
     # 测试完毕，关闭生产者和消费者的时间
     close-time: 120_000
-    cron: 0 32 16 26 5 ?
+    cron: 0 28 19 * * ?
   perf-case-configs:
     - producer-num: 1
       consumer-num: 1

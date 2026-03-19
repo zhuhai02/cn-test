@@ -9,6 +9,7 @@ import com.tongtech.cntest.config.TlqcnProperties;
 import com.tongtech.cntest.service.api.FunctionTestService;
 import com.tongtech.cntest.utils.PriorityUtil;
 import com.tongtech.cntest.utils.RawFileKeyReader;
+import com.tongtech.tlqcn.client.impl.AutoClusterFailover;
 import com.tongtech.tlqcn.shade.com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -139,6 +140,9 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         if (tlqcnProperties.getFunctionTestConfig().isEnabledMessagePriorityTest()) {
             messagePriorityTest();
         }
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledFailoverTest()) {
+            failoverTest();
+        }
     }
 
     @Override
@@ -166,10 +170,10 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                 long sendStartTime = System.currentTimeMillis();
                 MessageId send = producer.send(i);
                 long sendFinishTime = System.currentTimeMillis();
-                log.info(FUNCTION_TEST, "同步发送成功，内容<{}>, 消息id<{}>, time<{}ms>", i, send,(sendFinishTime - sendStartTime));
+                log.info(FUNCTION_TEST, "同步发送成功，内容<{}>, 消息id<{}>, time<{}ms>", i, send, (sendFinishTime - sendStartTime));
             }
 
-            Thread.sleep(1000*3);
+            Thread.sleep(1000 * 3);
             consumers.forEach(consumer -> {
                 try {
                     consumer.close();
@@ -224,7 +228,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                 producer.sendAsync(i)
                         .thenAccept(send -> {
                             long sendFinishTime = System.currentTimeMillis();
-                            log.info(FUNCTION_TEST, "异步发送成功，内容<{}>, 消息id<{}>, time<{}ms>", finalI, send,(sendFinishTime - sendStartTime));
+                            log.info(FUNCTION_TEST, "异步发送成功，内容<{}>, 消息id<{}>, time<{}ms>", finalI, send, (sendFinishTime - sendStartTime));
                             countDownLatch.countDown();
                         })
                         .exceptionally(throwable -> {
@@ -713,6 +717,88 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             PriorityUtil.startTest(totalPriority, topic, serviceUrl, false);
         } catch (ExecutionException | InterruptedException | TlqcnClientException e) {
             log.error("测试程序出现异常", e);
+        }
+    }
+
+    @Override
+    public void failoverTest() {
+        try {
+            ServiceUrlProvider failover = AutoClusterFailover.builder()
+                    .primary(tlqcnProperties.getClient().getFailoverConfig().getPrimaryUrl())
+                    .secondary(List.of(tlqcnProperties.getClient().getFailoverConfig().getSecondaryUrl()))
+                    .failoverDelay(10, TimeUnit.SECONDS)
+                    .switchBackDelay(30, TimeUnit.SECONDS)
+                    .checkInterval(1000, TimeUnit.MILLISECONDS)
+                    .build();
+
+            TlqcnClient client = TlqcnClient.builder()
+                    .serviceUrlProvider(failover)
+                    .build();
+
+            failover.initialize(client);
+
+            TlqcnAdmin primaryAdmin = TlqcnAdmin.builder()
+                    .serviceHttpUrl(tlqcnProperties.getClient().getFailoverConfig().getPrimaryHttpUrl())
+                    .build();
+
+            TlqcnAdmin secondaryAdmin = TlqcnAdmin.builder()
+                    .serviceHttpUrl(tlqcnProperties.getClient().getFailoverConfig().getSecondaryHttpUrl())
+                    .build();
+
+            try {
+                primaryAdmin.topics().delete(topic, true);
+                log.info("主集群删除topic<{}>成功", topic);
+                secondaryAdmin.topics().delete(topic, true);
+                log.info("备集群删除topic<{}>成功", topic);
+            }catch (Exception e){
+                log.info("删除topic<{}>失败", topic);
+            }
+
+            try {
+                primaryAdmin.topics().createNonPartitionedTopic(topic);
+                log.info("主集群创建topic<{}>成功", topic);
+                secondaryAdmin.topics().createNonPartitionedTopic(topic);
+                log.info("备集群创建topic<{}>成功", topic);
+            }catch (Exception e){
+                log.info("创建topic<{}>失败", topic);
+            }
+
+            Consumer<Long> failoverTestConsumer = client.newConsumer(Schema.INT64)
+                    .topic(topic)
+                    .subscriptionType(SubscriptionType.Shared)
+                    .subscriptionName("failoverSub")
+                    .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                    .messageListener((MessageListener<Long>) (consumer, msg) -> {
+                        log.info(FUNCTION_TEST, "消费者<{}>消费消息<{}>，发送者<{}>,复制集群<{}>", consumer.getConsumerName(), msg.getValue(), msg.getProducerName(), msg.getReplicatedFrom());
+                        //log.info("消费者<{}>消费消息<{}>，发送者<{}>,复制集群<{}>", consumer.getConsumerName(), msg.getValue(), msg.getProducerName(), msg.getReplicatedFrom());
+                    })
+                    .replicateSubscriptionState(true)
+                    .ackTimeout(0,TimeUnit.SECONDS)
+                    .subscribe();
+
+            Producer<Long> producer = client.newProducer(Schema.INT64)
+                    .topic(topic)
+                    .sendTimeout(0, TimeUnit.SECONDS)
+                    .create();
+
+            for (long i = 0; i < msgNum; i++) {
+                log.info(FUNCTION_TEST, "发送消息，内容<{}>", i);
+                MessageId send = producer.send(i);
+                log.info(FUNCTION_TEST, "发送成功，内容<{}>, 消息id<{}>", i, send);
+                //log.info("发送成功，内容<{}>, 消息id<{}>", i, send);
+            }
+
+            Thread.sleep(1000 * 13);
+            log.info(FUNCTION_TEST, "---------------定时消息测试完毕---------------");
+            producer.close();
+            failoverTestConsumer.close();
+            client.close();
+        } catch (TlqcnClientException e) {
+            log.error("测试程序出现异常", e);
+        } /*catch (TlqcnAdminException e) {
+            throw new RuntimeException(e);
+        } */catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
     }
 }

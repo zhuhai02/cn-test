@@ -82,4 +82,6 @@ public interface FunctionTestService {
      * 消息优先级测试
      */
     void messagePriorityTest();
+
+    void failoverTest();
 }

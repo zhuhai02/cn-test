@@ -87,6 +87,26 @@
     </filter>
   </appender>
 
+  <appender name="PROTOCOL_TEST_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>logs/protocol_test.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <fileNamePattern>logs/protocol_test.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+      <maxFileSize>10MB</maxFileSize>
+      <maxHistory>7</maxHistory>
+    </rollingPolicy>
+    <encoder>
+      <pattern>${LOG_PATTERN}</pattern>
+    </encoder>
+    <!-- 关键：使用 MarkerFilter 过滤特定标记 -->
+    <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
+      <evaluator class="ch.qos.logback.classic.boolex.OnMarkerEvaluator">
+        <marker>PROTOCOL_TEST</marker>
+      </evaluator>
+      <onMatch>ACCEPT</onMatch>
+      <onMismatch>DENY</onMismatch>
+    </filter>
+  </appender>
+
   <!-- Root Logger：输出到控制台和主文件 -->
   <root level="info">
     <appender-ref ref="CONSOLE"/>
@@ -108,5 +128,9 @@
     <appender-ref ref="PERF_CONSUMER_TEST_FILE"/>
   </logger>
 
-
+  <!-- 单独配置一个 Logger 处理 PROTOCOL_TEST 标记 -->
+  <logger name="PROTOCOL_TEST_LOGGER" level="info" additivity="true">
+    <appender-ref ref="PROTOCOL_TEST_FILE"/>
+    <appender-ref ref="CONSOLE"/>
+  </logger>
 </configuration>

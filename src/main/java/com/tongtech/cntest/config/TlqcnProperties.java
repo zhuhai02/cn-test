@@ -22,6 +22,16 @@ public class TlqcnProperties {
 
     private List<PerfCaseConfig> perfCaseConfigs;
 
+    private RotTestConfig rotTestConfig;
+
+    private AotTestConfig aotTestConfig;
+
+    private KotTestConfig kotTestConfig;
+
+    private MotTestConfig motTestConfig;
+
+    private JmsTestConfig jmsTestConfig;
+
 
     @Data
     public static class Client {
@@ -60,6 +70,7 @@ public class TlqcnProperties {
         private boolean enabledGmMessageTest;
         private boolean enabledGmTlsTest;
         private boolean enabledMessagePriorityTest;
+        private boolean enabledFailoverTest;
         private int consumerNum;
         private int topicPartitionNum;
         private int msgNum;
@@ -88,7 +99,9 @@ public class TlqcnProperties {
     @Data
     public static class FailoverConfig {
         private String primaryUrl;
+        private String primaryHttpUrl;
         private String secondaryUrl;
+        private String secondaryHttpUrl;
         private long delay;
         private long switchBackDelay;
         private long checkInterval;
@@ -106,4 +119,34 @@ public class TlqcnProperties {
         private boolean syncAck;
     }
 
+    @Data
+    public static class RotTestConfig {
+        private boolean enabled;
+        private String url;
+        private String topic;
+        private String producerGroup;
+        private String consumerGroup;
+        private String tag;
+        private int msgNum;
+        private boolean enabledSyncSendTest;
+        private boolean enabledAsyncSendTest;
+        private boolean enabledConsumerPullTest;
+        private boolean enabledConsumerPushTest;
+    }
+    @Data
+    public static class AotTestConfig {
+        private boolean enabled;
+    }
+    @Data
+    public static class KotTestConfig {
+        private boolean enabled;
+    }
+    @Data
+    public static class MotTestConfig {
+        private boolean enabled;
+    }
+    @Data
+    public static class JmsTestConfig {
+        private boolean enabled;
+    }
 }

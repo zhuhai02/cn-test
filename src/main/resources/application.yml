@@ -13,19 +13,21 @@ tlqcn:
       enabled: false
       token:
     failover-config:
-      primary-url: tlqcn://10.10.22.175:6650
+      primary-url: tlqcn://10.10.22.174:6650
+      primary-http-url: http://10.10.22.174:8080
       secondary-url: tlqcn://10.10.22.175:6650
+      secondary-http-url: http://10.10.22.175:8080
       delay: 30
       switch-back-delay: 60
       check-interval: 2000
       check-topic: "persistent://public/default/check_topic"
   function-test-config:
     enabled: false
-    topic: "persistent://public/default/topic1"
+    topic: "persistent://public/default/testTopic1"
     public-key-path: gm_-public-key.pem
     private-key-path: gm_-private-key.pem
-    enabled-sync-send-test: true
-    enabled-async--send-test: true
+    enabled-sync-send-test: false
+    enabled-async--send-test: false
     enabled-subscribe-type-test: false
     enabled-message-filter-test: false
     enabled-message-seek-test: false
@@ -39,25 +41,46 @@ tlqcn:
     enabled-gm-message-test: false
     enabled-gm-tls-test: false
     enabled-message-priority-test: false
+    enabled-failover-test: true
     consumer-num: 1
     topic-partition-num: 1
-    msg-num: 100
-  perf-param-configs:
+    msg-num: 100000
+  Rot-test-config:
     enabled: true
+    url: 10.10.22.174:9876;10.10.22.175:9876
+    topic: test3
+    producer-group: group1
+    consumer-group: group1
+    tag: tag1
+    msg-num: 10
+    enabled-sync-send-test: false
+    enabled-async-send-test: false
+    enabled-consumer-pull-test: false
+    enabled-consumer-push-test: true
+  Aot-test-config:
+    enabled: false
+  Kot-test-config:
+    enabled: false
+  Mot-test-config:
+    enabled: false
+  Jms-test-config:
+    enabled: false
+  perf-param-configs:
+    enabled: false
     topic: "persistent://public/default/perf_topic"
     enable-perf-sync-test: true
     enable-perf-async-test: true
     batching-max-publish-delay: 10
     batching-max-messages: 1000
     # 每一个测试用例执行的时间
-    test-time-per-case: 10_000
+    test-time-per-case: 360_000
     # 性能日志记录时间间隔
     log-interval: 10_000
     # 每一个测试用例之间的间隔
     case-interval: 60_000
     # 测试完毕，关闭生产者和消费者的时间
-    close-time: 120_000
-    cron: 0 28 19 * * ?
+    close-time: 600_000
+    cron: 0 42 16 * * ?
   perf-case-configs:
     - producer-num: 1
       consumer-num: 1
@@ -68,77 +91,8 @@ tlqcn:
       sync-ack: false
     - producer-num: 1
       consumer-num: 1
-      topic-partition-num: 100
-      msg-size: 1024
-      per-producer-thread-num: 1
-    - producer-num: 1
-      consumer-num: 1
-      topic-partition-num: 1
-      msg-size: 1024
-      per-producer-thread-num: 8
-    - producer-num: 1
-      consumer-num: 1
-      topic-partition-num: 100
-      msg-size: 1024
-      per-producer-thread-num: 8
-    - producer-num: 8
-      consumer-num: 8
       topic-partition-num: 1
       msg-size: 1024
       per-producer-thread-num: 1
-    - producer-num: 8
-      consumer-num: 8
-      topic-partition-num: 100
-      msg-size: 1024
-      per-producer-thread-num: 1
-    - producer-num: 8
-      consumer-num: 8
-      topic-partition-num: 1
-      msg-size: 1024
-      per-producer-thread-num: 8
-    - producer-num: 8
-      consumer-num: 8
-      topic-partition-num: 100
-      msg-size: 1024
-      per-producer-thread-num: 8
-
-    - producer-num: 1
-      consumer-num: 1
-      topic-partition-num: 1
-      msg-size: 4096
-      per-producer-thread-num: 1
-    - producer-num: 1
-      consumer-num: 1
-      topic-partition-num: 100
-      msg-size: 4096
-      per-producer-thread-num: 1
-    - producer-num: 1
-      consumer-num: 1
-      topic-partition-num: 1
-      msg-size: 4096
-      per-producer-thread-num: 8
-    - producer-num: 1
-      consumer-num: 1
-      topic-partition-num: 100
-      msg-size: 4096
-      per-producer-thread-num: 8
-    - producer-num: 8
-      consumer-num: 8
-      topic-partition-num: 1
-      msg-size: 4096
-      per-producer-thread-num: 1
-    - producer-num: 8
-      consumer-num: 8
-      topic-partition-num: 100
-      msg-size: 4096
-      per-producer-thread-num: 1
-    - producer-num: 8
-      consumer-num: 8
-      topic-partition-num: 1
-      msg-size: 4096
-      per-producer-thread-num: 8
-    - producer-num: 8
-      consumer-num: 8
-      topic-partition-num: 100
-      msg-size: 4096
-      per-producer-thread-num: 8
+      consume-after-send: false
+      sync-ack: false

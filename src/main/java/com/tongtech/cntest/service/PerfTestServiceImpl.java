@@ -167,6 +167,8 @@ public class PerfTestServiceImpl implements PerfTestService {
 
     private void startTest(boolean isSyncTest) {
         for (TlqcnProperties.PerfCaseConfig config : tlqcnProperties.getPerfCaseConfigs()) {
+            produceNum.set(0);
+            consummerNum.set(0);
             if (isSyncTest) {
                 producerLog.info(PERF_PRODUCER_TEST, "同步开始测试，生产者数量：{}，消费者数量：{}，主题分区数量：{}，消息大小：{}，每个生产者线程数量：{}",
                         config.getProducerNum(), config.getConsumerNum(), config.getTopicPartitionNum(),

@@ -82,6 +82,28 @@
       <version>1.0.9</version>
     </dependency>
 
+    <dependency>
+      <groupId>org.apache.rocketmq</groupId>
+      <artifactId>rocketmq-client</artifactId>
+      <!--<version>4.6.1</version>-->
+      <version>5.3.1</version>
+      <exclusions>
+        <exclusion>
+          <groupId>io.netty</groupId>
+          <artifactId>netty-all</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>io.netty</groupId>
+      <artifactId>netty-all</artifactId>
+      <version>4.1.82.Final</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.rocketmq</groupId>
+      <artifactId>rocketmq-client-java</artifactId>
+      <version>5.0.7</version>
+    </dependency>
   </dependencies>
 
   <build>
@@ -89,6 +111,7 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <version>3.3.0</version>
         <configuration>
           <excludes>
             <exclude>
@@ -104,6 +127,7 @@
         <!--这个插件就是把依赖的jar包复制出来放到编译后的target/lib目录，并且在打包时候排除内部依赖-->
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.3.0</version>
         <executions>
           <execution>
             <id>copy-dependencies</id>
@@ -112,7 +136,7 @@
               <goal>copy-dependencies</goal>
             </goals>
             <configuration>
-              <outputDirectory>${project.build.directory}/lib</outputDirectory>
+              <outputDirectory>E:/program/other/cn-test/lib</outputDirectory>
               <overWriteReleases>false</overWriteReleases>
               <overWriteSnapshots>false</overWriteSnapshots>
               <overWriteIfNewer>true</overWriteIfNewer>
@@ -136,7 +160,7 @@
                   <directory>src/main/resources</directory>
                 </resource>
               </resources>
-              <outputDirectory>${project.build.directory}/resources-application
+              <outputDirectory>E:/program/other/cn-test/resources-application
               </outputDirectory>
             </configuration>
           </execution>
@@ -146,6 +170,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
+        <version>3.3.0</version>
         <configuration>
           <archive>
             <!-- 指定资源文件目录，与打包的jar文件同级目录 -->
@@ -173,6 +198,7 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <version>3.3.0</version>
         <configuration>
           <layout>ZIP</layout>
           <includes>

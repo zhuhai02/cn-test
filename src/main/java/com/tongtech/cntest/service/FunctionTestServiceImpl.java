@@ -549,6 +549,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                 .ackTimeout(3, TimeUnit.SECONDS)
                 .negativeAckRedeliveryDelay(5, TimeUnit.SECONDS)
                 .subscriptionType(subscriptionType)
+                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                 .messageListener((MessageListener<T>) (consumer, msg) -> {
                     if (deadLetterTopic == null) {
                         log.info(FUNCTION_TEST, "消费者<{}>消费消息<{}>", consumer.getConsumerName(), msg.getValue());

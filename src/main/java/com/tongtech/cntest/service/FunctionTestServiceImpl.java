@@ -98,7 +98,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         if (tlqcnProperties.getFunctionTestConfig().isEnabledSyncSendTest()) {
             syncSendTest();
         }
-        if (tlqcnProperties.getFunctionTestConfig().isEnabledSyncSendTest()) {
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledAsyncSendTest()) {
             asyncSendTest();
         }
         if (tlqcnProperties.getFunctionTestConfig().isEnabledSubscribeTypeTest()) {

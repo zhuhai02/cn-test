@@ -598,7 +598,7 @@ public class FunctionTestServiceImpl implements FunctionTestService {
                     .send();
             log.info(FUNCTION_TEST, "延时消息发送成功，延时<{}>秒,消息id<{}>", delay, send1);
 
-            Thread.sleep(1000 * 13);
+            Thread.sleep(1000 * 110);
             log.info(FUNCTION_TEST, "---------------延时消息测试完毕---------------");
             producer.close();
             consumer.close();

@@ -71,6 +71,7 @@ public class TlqcnProperties {
         private boolean enabledGmTlsTest;
         private boolean enabledMessagePriorityTest;
         private boolean enabledFailoverTest;
+        private boolean enabledTransactionTest;
         private int consumerNum;
         private int topicPartitionNum;
         private int msgNum;

@@ -84,4 +84,9 @@ public interface FunctionTestService {
     void messagePriorityTest();
 
     void failoverTest();
+
+    /**
+     * 事务消息测试
+     */
+    void transactionTest();
 }

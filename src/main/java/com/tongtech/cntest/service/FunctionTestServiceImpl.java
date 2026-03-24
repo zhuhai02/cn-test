@@ -9,6 +9,7 @@ import com.tongtech.cntest.config.TlqcnProperties;
 import com.tongtech.cntest.service.api.FunctionTestService;
 import com.tongtech.cntest.utils.PriorityUtil;
 import com.tongtech.cntest.utils.RawFileKeyReader;
+import com.tongtech.tlqcn.client.api.transaction.Transaction;
 import com.tongtech.tlqcn.client.impl.AutoClusterFailover;
 import com.tongtech.tlqcn.shade.com.google.common.collect.Lists;
 import org.slf4j.Logger;
@@ -142,6 +143,9 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         }
         if (tlqcnProperties.getFunctionTestConfig().isEnabledFailoverTest()) {
             failoverTest();
+        }
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledTransactionTest()) {
+            transactionTest();
         }
     }
 
@@ -801,5 +805,111 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         } */catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public void transactionTest() {
+        log.info(FUNCTION_TEST, "---------------事务测试开始---------------");
+        String inputTopic = "inputTopic";
+        String outputTopicOne = "outputTopicOne";
+        String outputTopicTwo = "outputTopicTwo";
+        clearAndCreateTopic(inputTopic);
+        clearAndCreateTopic(outputTopicOne);
+        clearAndCreateTopic(outputTopicTwo);
+        TlqcnClient client;
+        try {
+            client = TlqcnClient.builder()
+                    .serviceUrl(tlqcnProperties.getClient().getServiceUrl())
+                    .enableTransaction(true)
+                    .build();
+            // create three producers to produce messages to input and output topics.
+            ProducerBuilder<String> producerBuilder = client.newProducer(Schema.STRING);
+            Producer<String> inputProducer = producerBuilder.topic(inputTopic)
+                    .sendTimeout(0, TimeUnit.SECONDS).create();
+            Producer<String> outputProducerOne = producerBuilder.topic(outputTopicOne)
+                    .sendTimeout(0, TimeUnit.SECONDS).create();
+            Producer<String> outputProducerTwo = producerBuilder.topic(outputTopicTwo)
+                    .sendTimeout(0, TimeUnit.SECONDS).create();
+            // create three consumers to consume messages from input and output topics.
+            Consumer<String> inputConsumer = client.newConsumer(Schema.STRING)
+                    .subscriptionName("sub").topic(inputTopic).subscribe();
+            Consumer<String> outputConsumerOne = client.newConsumer(Schema.STRING)
+                    .subscriptionName("sub").topic(outputTopicOne).subscribe();
+            Consumer<String> outputConsumerTwo = client.newConsumer(Schema.STRING)
+                    .subscriptionName("sub").topic(outputTopicTwo).subscribe();
+
+            int count = 2;
+            // produce messages to input topics.
+            for (int i = 0; i < count; i++) {
+                String msg = "Hello TongLINK/Q-CN! count : " + i;
+                MessageId send = inputProducer.send(msg);
+                log.info(FUNCTION_TEST, "向主题<{}>发送消息<{}>,消息id<{}>", inputTopic, msg, send);
+            }
+
+            // consume messages and produce them to output topics with transactions.
+            for (int i = 0; i < count; i++) {
+
+                // the consumer successfully receives messages.
+                Message<String> message = inputConsumer.receive();
+                log.info(FUNCTION_TEST, "主题<{}>收取消息<{}>,消息id<{}>", inputTopic, message.getValue(), message.getMessageId());
+
+                // create transactions.
+                // The transaction timeout is specified as 10 seconds.
+                // If the transaction is not committed within 10 seconds, the transaction is automatically aborted.
+                Transaction txn = null;
+                try {
+                    txn = client.newTransaction()
+                            .withTransactionTimeout(10, TimeUnit.SECONDS).build().get();
+                    log.info(FUNCTION_TEST, "开启一个事务<{}>", txn.getTxnID());
+                    // you can process the received message with your use case and business logic.
+
+                    // the producers produce messages to output topics with transactions
+                    String outputTopicOneMsg = "Hello TongLINK/Q-CN! outputTopicOne count : " + i;
+                    String outputTopicTwoMsg = "Hello TongLINK/Q-CN! outputTopicTwo count : " + i;
+                    MessageId sendOne = outputProducerOne.newMessage(txn).value(outputTopicOneMsg).send();
+                    log.info(FUNCTION_TEST, "向主题<{}>发送消息<{}>,带事务,消息id<{}>", outputTopicOne, outputTopicOneMsg, sendOne);
+                    MessageId sendTwo = outputProducerTwo.newMessage(txn).value(outputTopicTwoMsg).send();
+                    log.info(FUNCTION_TEST, "向主题<{}>发送消息<{}>,带事务,消息id<{}>", outputTopicTwo, outputTopicTwoMsg, sendTwo);
+
+                    // the consumers acknowledge the input message with the transactions *individually*.
+                    inputConsumer.acknowledgeAsync(message.getMessageId(), txn).get();
+                    log.info(FUNCTION_TEST, "向主题<{}>确认消息<{}>,携带事务,消息id<{}>", inputTopic, message.getValue(), message.getMessageId());
+                    // commit transactions.
+                    txn.commit().get();
+                    log.info(FUNCTION_TEST, "提交事务<{}>", txn.getTxnID());
+                } catch (ExecutionException e) {
+                    if (!(e.getCause() instanceof TlqcnClientException.TransactionConflictException)) {
+                        // If TransactionConflictException is not thrown,
+                        // you need to redeliver or negativeAcknowledge this message,
+                        // or else this message will not be received again.
+                        inputConsumer.negativeAcknowledge(message);
+                    }
+
+                    // If a new transaction is created,
+                    // then the old transaction should be aborted.
+                    if (txn != null) {
+                        txn.abort();
+                    }
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            // Final result: consume messages from output topics and print them.
+            for (int i = 0; i < count; i++) {
+                Message<String> message =  outputConsumerOne.receive();
+                log.info(FUNCTION_TEST, "主题<{}>收取消息<{}>,消息id<{}>", outputTopicOne, message.getValue(), message.getMessageId());
+                outputConsumerOne.acknowledge(message);
+            }
+
+            for (int i = 0; i < count; i++) {
+                Message<String> message =  outputConsumerTwo.receive();
+                log.info(FUNCTION_TEST, "主题<{}>收取消息<{}>,消息id<{}>", outputTopicTwo, message.getValue(), message.getMessageId());
+                outputConsumerTwo.acknowledge(message);
+            }
+        } catch (TlqcnClientException e) {
+            log.error("客户端创建失败", e);
+        }
+        log.info(FUNCTION_TEST, "--------------事务测试完毕---------------");
     }
 }

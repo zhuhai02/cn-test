@@ -104,6 +104,26 @@
       <artifactId>rocketmq-client-java</artifactId>
       <version>5.0.7</version>
     </dependency>
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+      <version>3.2.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.rabbitmq</groupId>
+      <artifactId>amqp-client</artifactId>
+      <version>5.25.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.paho</groupId>
+      <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+      <version>1.2.5</version>
+    </dependency>
+    <dependency>
+      <groupId>com.tongtech.cnjms</groupId>
+      <artifactId>tlqcn-jms-all</artifactId>
+      <version>10.0.5.0</version>
+    </dependency>
   </dependencies>
 
   <build>

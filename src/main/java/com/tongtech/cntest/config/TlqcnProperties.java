@@ -137,17 +137,43 @@ public class TlqcnProperties {
     @Data
     public static class AotTestConfig {
         private boolean enabled;
+        private String url;
+        private String topic;
+        private int msgNum;
+        private String virtualHost;
+        private String routingKeys;
+        private String exchangeName;
+        private String queueName;
+        private boolean enabledDefaulExchangeTest;
+        private boolean enabledDirectExchangeTest;
+        private boolean enabledFanoutExchangeTest;
+        private boolean enabledTopicExchangeTest;
     }
     @Data
     public static class KotTestConfig {
         private boolean enabled;
+        private String url;
+        private String topic;
+        private int msgNum;
+        private boolean enabledSyncSendTest;
+        private boolean enabledSimpleConsumerTest;
     }
     @Data
     public static class MotTestConfig {
         private boolean enabled;
+        private String url;
+        private String topic;
+        private int msgNum;
+        private int qos;
+        private boolean enabledSimpleTest;
     }
     @Data
     public static class JmsTestConfig {
         private boolean enabled;
+        private String brokerServiceUrl;
+        private String webServiceUrl;
+        private String topic;
+        private int msgNum;
+        private boolean enabledJms2P2PTest;
     }
 }

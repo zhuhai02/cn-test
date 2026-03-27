@@ -129,7 +129,7 @@
   </logger>
 
   <!-- 单独配置一个 Logger 处理 PROTOCOL_TEST 标记 -->
-  <logger name="PROTOCOL_TEST_LOGGER" level="info" additivity="true">
+  <logger name="PROTOCOL_TEST_LOGGER" level="info" additivity="false">
     <appender-ref ref="PROTOCOL_TEST_FILE"/>
     <appender-ref ref="CONSOLE"/>
   </logger>

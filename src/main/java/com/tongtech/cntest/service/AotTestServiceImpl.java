@@ -3,6 +3,7 @@ package com.tongtech.cntest.service;
 import com.rabbitmq.client.*;
 import com.tongtech.cntest.config.TlqcnProperties;
 import com.tongtech.cntest.service.api.AotTestService;
+import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,8 +25,6 @@ public class AotTestServiceImpl implements AotTestService {
 
     private static final Marker PROTOCOL_TEST = MarkerFactory.getMarker("PROTOCOL_TEST");
 
-    private final TlqcnProperties tlqcnProperties;
-
     private String url;
 
     private Address[] addresses;
@@ -34,23 +33,9 @@ public class AotTestServiceImpl implements AotTestService {
 
     private int port = 0;
 
-    private String virtualHost;
-
-    private String[] routingKeys;
-
-    private String exchangeName;
-
-    private String queueName;
-
-    private String topic;
-
-    private int msgNum = 0;
-
     @Autowired
     public AotTestServiceImpl(TlqcnProperties tlqcnProperties) {
-        this.tlqcnProperties = tlqcnProperties;
         this.url = tlqcnProperties.getAotTestConfig().getUrl();
-        this.virtualHost = tlqcnProperties.getAotTestConfig().getVirtualHost();
 
         String[] urlList = this.url.split(",");
 
@@ -65,42 +50,8 @@ public class AotTestServiceImpl implements AotTestService {
                     .toArray(Address[]::new);
         }
 
-        this.topic = tlqcnProperties.getAotTestConfig().getTopic();
-        this.msgNum = tlqcnProperties.getAotTestConfig().getMsgNum();
-        this.routingKeys = tlqcnProperties.getAotTestConfig().getRoutingKeys().split(",");
-        this.exchangeName = tlqcnProperties.getAotTestConfig().getExchangeName();
-        this.queueName = tlqcnProperties.getAotTestConfig().getQueueName();
     }
 
-
-    @Override
-    public void startTest() {
-        try {
-
-
-            if (tlqcnProperties.getAotTestConfig().isEnabledDefaulExchangeTest()) {
-                defaulExchangeTest();
-            }
-
-            if (tlqcnProperties.getAotTestConfig().isEnabledDirectExchangeTest()) {
-                directExchangeTest();
-            }
-
-            if (tlqcnProperties.getAotTestConfig().isEnabledFanoutExchangeTest()) {
-                fanoutExchangeTest();
-            }
-
-            if (tlqcnProperties.getAotTestConfig().isEnabledTopicExchangeTest()) {
-                topicExchangeTest();
-            }
-
-
-        } catch (Exception e) {
-            log.error(PROTOCOL_TEST, "AMQP协议测试失败，topic：<{}>", topic, e);
-        }
-
-        log.info(PROTOCOL_TEST, "---------------AMQP协议测试结束----------------");
-    }
 
     private Connection createConnection(String virtualHost) throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
@@ -133,14 +84,14 @@ public class AotTestServiceImpl implements AotTestService {
     }
 
     @Override
-    public void defaulExchangeTest() {
-        log.info(PROTOCOL_TEST, "AMQP协议defaulExchange测试开始");
+    public String defaulExchangeTest(String defaultQueue, int msgNum) {
+        String testNum = UUID.randomUUID().toString();
+        log.info(PROTOCOL_TEST, "----------AMQP协议defaulExchange测试开始,测试编号[{}]----------", testNum);
 
         try {
             Connection connection = createConnection(null);
 
             Channel channel = connection.createChannel();
-            String defaultQueue = this.queueName + "_default";
             channel.queueDeclare(defaultQueue, false, false, false, null);
 
             //创建消费者
@@ -161,7 +112,7 @@ public class AotTestServiceImpl implements AotTestService {
                 // 发送持久化消息
                 channel.basicPublish("", defaultQueue, null, message.getBytes());
 
-                log.info(PROTOCOL_TEST, "AMQP协议efaulExchange发送：<{}>", message);
+                log.info(PROTOCOL_TEST, "AMQP协议defaulExchange发送：<{}>", message);
             }
 
             Thread.sleep(1000 * 30);
@@ -170,19 +121,22 @@ public class AotTestServiceImpl implements AotTestService {
             connection.close();
             log.info(PROTOCOL_TEST, "AMQP协议defaulExchange测试完成");
         } catch (Exception e) {
-            log.error(PROTOCOL_TEST, "AMQP协议defaulExchange测试失败，topic：<{}>", topic, e);
+            log.error(PROTOCOL_TEST, "AMQP协议defaulExchange测试失败", e);
         }
+        log.info(PROTOCOL_TEST, "----------AMQP协议defaulExchange测试结束,测试编号[{}]----------", testNum);
+        return "测试完毕，请查看logs/protocol_test.log中测试编号[" + testNum + "]之间的日志";
     }
 
     @Override
-    public void directExchangeTest() {
-        log.info(PROTOCOL_TEST, "AMQP协议directExchange测试开始");
+    public String directExchangeTest(String virtualHost, String queueName, String exchangeName, int msgNum) {
+        String testNum = UUID.randomUUID().toString();
+        log.info(PROTOCOL_TEST, "----------AMQP协议directExchange测试开始,测试编号[{}]----------", testNum);
 
         try {
             Connection connection = createConnection(virtualHost);
 
-            String directQueue = this.queueName + "_direct";
-            String directExchange = this.exchangeName + "_direct";
+            String directQueue = queueName + "_direct";
+            String directExchange =exchangeName + "_direct";
             String directRoutingKey = "direct_routing_key";
 
             Channel channel = connection.createChannel();
@@ -212,12 +166,12 @@ public class AotTestServiceImpl implements AotTestService {
                     Thread.currentThread().interrupt();
                     // 拒绝消息并重新入队
                     channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
-                    log.error(PROTOCOL_TEST, "AMQP协议directExchange消息消费失败，消息重新入队，topic：<{}>", topic, e);
+                    log.error(PROTOCOL_TEST, "AMQP协议directExchange消息消费失败，消息重新入队", e);
                 } catch (Exception e) {
                     //测试发现rop支持消息的重新投递
                     // 拒绝消息并重新入队
                     channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
-                    log.error(PROTOCOL_TEST, "AMQP协议directExchange消息消费失败，消息重新投递，topic：<{}>", topic, e);
+                    log.error(PROTOCOL_TEST, "AMQP协议directExchange消息消费失败，消息重新投递", e);
                 }
             };
 
@@ -256,8 +210,10 @@ public class AotTestServiceImpl implements AotTestService {
             connection.close();
             log.info(PROTOCOL_TEST, "AMQP协议directExchange测试完成");
         } catch (Exception e) {
-            log.error(PROTOCOL_TEST, "AMQP协议directExchange测试失败，topic：<{}>", topic, e);
+            log.error(PROTOCOL_TEST, "AMQP协议directExchange测试失败", e);
         }
+        log.info(PROTOCOL_TEST, "----------AMQP协议directExchange测试结束,测试编号[{}]----------", testNum);
+        return "测试完毕，请查看logs/protocol_test.log中测试编号[" + testNum + "]之间的日志";
     }
 
     @Override

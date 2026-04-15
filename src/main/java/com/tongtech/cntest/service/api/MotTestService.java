@@ -1,7 +1,5 @@
 package com.tongtech.cntest.service.api;
 
 public interface MotTestService {
-    void startTest();
-
-    void simpleTest();
+    String simpleTest(String topic, int qos, int msgNum);
 }

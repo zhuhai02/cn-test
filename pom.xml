@@ -204,39 +204,8 @@
               <mainClass>com.tongtech.cntest.CnTestApplication</mainClass>
             </manifest>
           </archive>
-          <!-- 打包时忽略的文件（也就是不打进jar包里的文件），将resources下的所有文件全部排除 -->
-          <excludes>
-            <exclude>**/*.properties</exclude>
-            <exclude>**/*.xml</exclude>
-            <exclude>**/*.yml</exclude>
-            <exclude>static/**</exclude>
-            <exclude>templates/**</exclude>
-          </excludes>
         </configuration>
       </plugin>
-      <!-- spring boot repackage -->
-      <plugin>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-maven-plugin</artifactId>
-        <version>3.3.0</version>
-        <configuration>
-          <layout>ZIP</layout>
-          <includes>
-            <include>
-              <groupId>com.tech</groupId>
-              <artifactId>application</artifactId>
-            </include>
-          </includes>
-        </configuration>
-        <executions>
-          <execution>
-            <goals>
-              <goal>repackage</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-
 
     </plugins>
   </build>

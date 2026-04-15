@@ -1,11 +1,10 @@
 package com.tongtech.cntest.service.api;
 
 public interface AotTestService {
-    void startTest();
 
-    void defaulExchangeTest();
+    String defaulExchangeTest(String defaultQueue, int msgNum);
 
-    void directExchangeTest();
+    String directExchangeTest(String virtualHost, String queueName, String exchangeName, int msgNum);
 
     void fanoutExchangeTest();
 

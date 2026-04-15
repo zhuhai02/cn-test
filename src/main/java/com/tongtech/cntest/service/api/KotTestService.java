@@ -1,9 +1,8 @@
 package com.tongtech.cntest.service.api;
 
 public interface KotTestService {
-    void startTest();
 
-    void syncSendTest();
+    String syncSendTest(String topic, int msgNum);
 
-    void simpleConsumerTest();
+    String simpleConsumerTest(String topic, int msgNum);
 }

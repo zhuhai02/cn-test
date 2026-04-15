@@ -1,13 +1,12 @@
 package com.tongtech.cntest.service.api;
 
 public interface RotTestService {
-    void startTest();
 
-    void syncSendTest();
+    String syncSendTest(String producerGroup, String topic, int msgNum);
 
-    void asyncSendTest();
+    String asyncSendTest(String producerGroup, String topic, int msgNum);
 
-    void consumerPullTest();
+    String consumerPullTest(String topic, String consumerGroup);
 
-    void consumerPushTest();
+    String consumerPushTest(String topic, String consumerGroup, int msgNum);
 }

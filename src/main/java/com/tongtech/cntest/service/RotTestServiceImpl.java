@@ -9,6 +9,7 @@ import org.apache.rocketmq.client.consumer.PullResult;
 import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyContext;
 import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
 import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.client.producer.SendCallback;
 import org.apache.rocketmq.client.producer.SendResult;
@@ -33,56 +34,27 @@ public class RotTestServiceImpl implements RotTestService {
 
     private static final Marker PROTOCOL_TEST = MarkerFactory.getMarker("PROTOCOL_TEST");
 
-    private final TlqcnProperties tlqcnProperties;
-
     private String url;
-
-    private String topic;
-
-    private int msgNum = 0;
-
-    private DefaultMQProducer producer;
 
 
     @Autowired
     public RotTestServiceImpl(TlqcnProperties tlqcnProperties) {
-        this.tlqcnProperties = tlqcnProperties;
         this.url = tlqcnProperties.getRotTestConfig().getUrl();
-        this.topic = tlqcnProperties.getRotTestConfig().getTopic();
-        this.msgNum = tlqcnProperties.getRotTestConfig().getMsgNum();
     }
 
-    @Override
-    public void startTest() {
-        producer = new DefaultMQProducer(tlqcnProperties.getRotTestConfig().getProducerGroup());
+    public DefaultMQProducer createProducer(String producerGroup) {
+        DefaultMQProducer producer = new DefaultMQProducer(producerGroup);
         producer.setNamesrvAddr(url);
         try {
             producer.start();
-
-            if (tlqcnProperties.getRotTestConfig().isEnabledSyncSendTest()) {
-                syncSendTest();
-            }
-
-            if (tlqcnProperties.getRotTestConfig().isEnabledAsyncSendTest()) {
-                asyncSendTest();
-            }
-
-            if (tlqcnProperties.getRotTestConfig().isEnabledConsumerPushTest()) {
-                consumerPushTest();
-            }
-
-            if (tlqcnProperties.getRotTestConfig().isEnabledConsumerPullTest()) {
-                consumerPullTest();
-            }
-        } catch (Exception e) {
-            log.error(PROTOCOL_TEST, "Rocketmq协议测试失败，topic：<{}>", topic, e);
+            return producer;
+        } catch (MQClientException e) {
+            log.error(PROTOCOL_TEST, "producer 创建失败", e);
         }
-
-        producer.shutdown();
-        log.info(PROTOCOL_TEST, "---------------Rocketmq协议测试结束----------------");
+        return null;
     }
 
-    private void createTopic() {
+    private void createTopic(DefaultMQProducer producer, String topic) {
         try {
             for (int i = 0; i < 1; i++) {
                 Date date = new Date();
@@ -104,7 +76,7 @@ public class RotTestServiceImpl implements RotTestService {
         }
     }
 
-    private void simpleSend(int size, String tag) {
+    private void simpleSend(DefaultMQProducer producer, String topic, int size, String tag) {
         try {
             for (int i = 0; i < size; i++) {
                 Date date = new Date();
@@ -128,8 +100,10 @@ public class RotTestServiceImpl implements RotTestService {
     }
 
     @Override
-    public void syncSendTest() {
-        log.info(PROTOCOL_TEST, "Rocketmq协议同步发送测试开始");
+    public String syncSendTest(String producerGroup, String topic, int msgNum) {
+        String testNum = UUID.randomUUID().toString();
+        log.info(PROTOCOL_TEST, "----------Rocketmq协议同步发送测试开始,测试编号[{}]----------", testNum);
+        DefaultMQProducer producer = createProducer(producerGroup);
 
         try {
             for (int i = 0; i < msgNum; i++) {
@@ -149,14 +123,19 @@ public class RotTestServiceImpl implements RotTestService {
             }
 
             log.info(PROTOCOL_TEST, "Rocketmq协议同步发送测试完成");
+            producer.shutdown();
         } catch (Exception e) {
             log.error(PROTOCOL_TEST, "Rocketmq协议同步发送测试失败，topic：<{}>", topic, e);
         }
+        log.info(PROTOCOL_TEST, "----------Rocketmq协议同步发送测试结束,测试编号[{}]----------", testNum);
+        return "测试完毕，请查看logs/protocol_test.log中测试编号[" + testNum + "]之间的日志";
     }
 
     @Override
-    public void asyncSendTest() {
-        log.info(PROTOCOL_TEST, "Rocketmq协议异步发送测试开始");
+    public String asyncSendTest(String producerGroup, String topic, int msgNum) {
+        String testNum = UUID.randomUUID().toString();
+        log.info(PROTOCOL_TEST, "----------Rocketmq协议异步发送测试开始,测试编号[{}]----------", testNum);
+        DefaultMQProducer producer = createProducer(producerGroup);
 
         try {
             producer.setRetryTimesWhenSendAsyncFailed(0);
@@ -195,25 +174,29 @@ public class RotTestServiceImpl implements RotTestService {
             //异步发送，如果要求可靠传输，必须要等回调接口返回明确结果后才能结束逻辑，否则立即关闭Producer可能导致部分消息尚未传输成功
             countDownLatch.await();
             log.info(PROTOCOL_TEST, "Rocketmq协议异步发送测试完成");
+            producer.shutdown();
         } catch (Exception e) {
             log.error(PROTOCOL_TEST, "Rocketmq协议异步发送测试失败，topic：<{}>", topic, e);
         }
+        log.info(PROTOCOL_TEST, "----------Rocketmq协议异步发送测试结束,测试编号[{}]----------", testNum);
+        return "测试完毕，请查看logs/protocol_test.log中测试编号[" + testNum + "]之间的日志";
     }
 
     @Override
-    public void consumerPullTest() {
-        log.info(PROTOCOL_TEST, "Rocketmq协议pull消费测试开始");
-
+    public String consumerPullTest(String topic, String consumerGroup) {
+        String testNum = UUID.randomUUID().toString();
+        log.info(PROTOCOL_TEST, "----------Rocketmq协议pull消费测试开始,测试编号[{}]----------", testNum);
+        DefaultMQProducer producer = createProducer("consumerPullTest");
         try {
-            createTopic();
+            createTopic(producer, topic);
 
-            DefaultMQPullConsumer consumer = new DefaultMQPullConsumer(tlqcnProperties.getRotTestConfig().getConsumerGroup());
+            DefaultMQPullConsumer consumer = new DefaultMQPullConsumer(consumerGroup);
             consumer.setNamesrvAddr(url);
             consumer.setMessageModel(MessageModel.CLUSTERING);
             consumer.setInstanceName("ConsumerInstance_01");
             consumer.start();
 
-            simpleSend(16, "tag_pull");
+            simpleSend(producer,topic,16, "tag_pull");
 
             Map<MessageQueue, Long> offsetTable = new HashMap<>();
 
@@ -279,19 +262,24 @@ public class RotTestServiceImpl implements RotTestService {
             }
 
             log.info(PROTOCOL_TEST, "Rocketmq协议pull消费测试完成");
+            producer.shutdown();
+            consumer.shutdown();
         } catch (Exception e) {
             log.error(PROTOCOL_TEST, "Rocketmq协议pull消费测试失败，topic：<{}>", topic, e);
         }
+        log.info(PROTOCOL_TEST, "----------Rocketmq协议pull消费测试结束,测试编号[{}]----------", testNum);
+        return "测试完毕，请查看logs/protocol_test.log中测试编号[" + testNum + "]之间的日志";
     }
 
     @Override
-    public void consumerPushTest() {
-        log.info(PROTOCOL_TEST, "Rocketmq协议push消费测试开始");
-
+    public String consumerPushTest(String topic, String consumerGroup, int msgNum) {
+        String testNum = UUID.randomUUID().toString();
+        log.info(PROTOCOL_TEST, "----------Rocketmq协议push消费测试开始,测试编号[{}]----------", testNum);
+        DefaultMQProducer producer = createProducer("consumerPushTest");
         try {
-            createTopic();
+            createTopic(producer,  topic);
 
-            DefaultMQPushConsumer consumer = new DefaultMQPushConsumer(tlqcnProperties.getRotTestConfig().getConsumerGroup());
+            DefaultMQPushConsumer consumer = new DefaultMQPushConsumer(consumerGroup);
             consumer.setNamesrvAddr(url);
 
             consumer.subscribe(topic, "tag_push");
@@ -310,12 +298,16 @@ public class RotTestServiceImpl implements RotTestService {
 
             consumer.start();
 
-            simpleSend(msgNum, "tag_push");
+            simpleSend(producer, topic, msgNum, "tag_push");
 
             Thread.sleep(1000 * 30);
             log.info(PROTOCOL_TEST, "Rocketmq协议push消费测试完成");
+            producer.shutdown();
+            consumer.shutdown();
         } catch (Exception e) {
             log.error(PROTOCOL_TEST, "Rocketmq协议push消费测试失败，topic：<{}>", topic, e);
         }
+        log.info(PROTOCOL_TEST, "----------Rocketmq协议push消费测试结束,测试编号[{}]----------", testNum);
+        return "测试完毕，请查看logs/protocol_test.log中测试编号[" + testNum + "]之间的日志";
     }
 }

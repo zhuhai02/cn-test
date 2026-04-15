@@ -2,123 +2,34 @@ server:
   port: 8081
 spring:
   application:
-  name: tlq-cn-demo
+    name: tlq-cn-demo
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
 
 
 tlqcn:
   client:
-    service-url: tlqcn://10.10.22.175:6650
-    service-http-url: http://10.10.22.175:8080
-    authentication:
-      enabled: false
-      token:
+    service-url: tlqcn://10.10.22.133:6550
+    service-http-url: http://10.10.22.133:8580
     failover-config:
       primary-url: tlqcn://10.10.22.174:6650
       primary-http-url: http://10.10.22.174:8080
       secondary-url: tlqcn://10.10.22.175:6650
       secondary-http-url: http://10.10.22.175:8080
-      delay: 30
-      switch-back-delay: 60
-      check-interval: 2000
-      check-topic: "persistent://public/default/check_topic"
-  function-test-config:
-    enabled: false
-    topic: "persistent://public/default/testTopic1"
-    public-key-path: gm_-public-key.pem
-    private-key-path: gm_-private-key.pem
-    enabled-sync-send-test: false
-    enabled-async--send-test: false
-    enabled-subscribe-type-test: false
-    enabled-message-filter-test: false
-    enabled-message-seek-test: false
-    enabled-broadcast-consume-test: false
-    enabled-message-ttl-test: false
-    enabled-dead-letter-queue-test: false
-    enabled-consumer-retry-test: false
-    enabled-delay-message-test: false
-    enabled-scheduled-message-test: false
-    enabled-message-order-test: false
-    enabled-gm-message-test: false
-    enabled-gm-tls-test: false
-    enabled-message-priority-test: false
-    enabled-failover-test: true
-    consumer-num: 1
-    topic-partition-num: 1
-    msg-num: 100000
   Rot-test-config:
-    enabled: true
-    url: 10.10.22.174:9876;10.10.22.175:9876
-    topic: test3
-    producer-group: group1
-    consumer-group: group1
-    tag: tag1
-    msg-num: 10
-    enabled-sync-send-test: false
-    enabled-async-send-test: false
-    enabled-consumer-pull-test: false
-    enabled-consumer-push-test: true
+    url: 10.10.22.136:19876
   Aot-test-config:
-    enabled: true
     url: 10.10.22.174:5682,10.10.22.174:5682
-    topic: test2
-    msg-num: 10
-    virtual-host: vhost1
-    routing-keys: lazy.orange.elephant,quick.brown.fox,orange
-    exchange-name: exchange1
-    queue-name: queue1
-    enabled-defaul-exchange-test: true
-    enabled-direct-exchange-test: false
-    enabled-fanout-exchange-test: false
-    enabled-topic-exchange-test: false
   Kot-test-config:
-    enabled: true
     url: 10.10.22.174:9092,10.10.22.175:9092
-    topic: test1
-    msg-num: 10
-    enabled-sync-send-test: false
-    enabled-simple-consumer-test: true
   Mot-test-config:
-    enabled: true
     url: tcp://10.10.22.174:1883,tcp://10.10.22.175:1883
-    topic: persistent://public/default/mqtt-topic1
-    msg-num: 10
-    qos: 1
-    enabled-simple-test: true
   Jms-test-config:
-    enabled: true
     broker-service-url: pulsar://10.10.22.174:6650,10.10.22.175:6650
     web-service-url: http://10.10.22.162:8080,10.10.22.174:8080
-    topic: persistent://public/default/jms-topic1
-    msg-num: 10
-    enabled-jms2-P2P-test: true
-  perf-param-configs:
-    enabled: false
-    topic: "persistent://public/default/perf_topic"
-    enable-perf-sync-test: true
-    enable-perf-async-test: true
-    batching-max-publish-delay: 10
-    batching-max-messages: 1000
-    # 每一个测试用例执行的时间
-    test-time-per-case: 360_000
-    # 性能日志记录时间间隔
-    log-interval: 10_000
-    # 每一个测试用例之间的间隔
-    case-interval: 60_000
-    # 测试完毕，关闭生产者和消费者的时间
-    close-time: 600_000
-    cron: 0 42 16 * * ?
-  perf-case-configs:
-    - producer-num: 1
-      consumer-num: 1
-      topic-partition-num: 1
-      msg-size: 1024
-      per-producer-thread-num: 1
-      consume-after-send: false
-      sync-ack: false
-    - producer-num: 1
-      consumer-num: 1
-      topic-partition-num: 1
-      msg-size: 1024
-      per-producer-thread-num: 1
-      consume-after-send: false
-      sync-ack: false

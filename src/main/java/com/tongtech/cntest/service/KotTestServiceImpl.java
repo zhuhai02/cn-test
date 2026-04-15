@@ -37,33 +37,10 @@ public class KotTestServiceImpl implements KotTestService {
 
     private String url;
 
-    private String topic;
-
-    private int msgNum = 0;
-
     @Autowired
     public KotTestServiceImpl(TlqcnProperties tlqcnProperties) {
         this.tlqcnProperties = tlqcnProperties;
         this.url = tlqcnProperties.getKotTestConfig().getUrl();
-        this.topic = tlqcnProperties.getKotTestConfig().getTopic();
-        this.msgNum = tlqcnProperties.getKotTestConfig().getMsgNum();
-    }
-
-    @Override
-    public void startTest() {
-        try {
-            if (tlqcnProperties.getKotTestConfig().isEnabledSyncSendTest()) {
-                syncSendTest();
-            }
-
-            if(tlqcnProperties.getKotTestConfig().isEnabledSimpleConsumerTest()){
-                simpleConsumerTest();
-            }
-        } catch (Exception e) {
-            log.error(PROTOCOL_TEST, "Kafka协议测试失败，topic：<{}>", topic, e);
-        }
-
-        log.info(PROTOCOL_TEST, "---------------kafka协议测试结束----------------");
     }
 
     private KafkaProducer<String, String> createProducer() {
@@ -84,8 +61,9 @@ public class KotTestServiceImpl implements KotTestService {
 
 
     @Override
-    public void syncSendTest() {
-        log.info(PROTOCOL_TEST, "kafka协议同步发送测试开始");
+    public String syncSendTest(String topic, int msgNum) {
+        String testNum = UUID.randomUUID().toString();
+        log.info(PROTOCOL_TEST, "----------kafka协议同步发送测试开始,测试编号[{}]----------", testNum);
 
         try {
             KafkaProducer<String, String> producer = createProducer();
@@ -103,12 +81,14 @@ public class KotTestServiceImpl implements KotTestService {
         } catch (Exception e) {
             log.error(PROTOCOL_TEST, "kafka协议同步发送测试失败，topic：<{}>", topic, e);
         }
+        log.info(PROTOCOL_TEST, "----------kafka协议同步发送测试结束,测试编号[{}]----------", testNum);
+        return "测试完毕，请查看logs/protocol_test.log中测试编号[" + testNum + "]之间的日志";
     }
 
     @Override
-    public void simpleConsumerTest() {
-        log.info(PROTOCOL_TEST, "kafka协议简单消费测试开始");
-
+    public String simpleConsumerTest(String topic, int msgNum) {
+        String testNum = UUID.randomUUID().toString();
+        log.info(PROTOCOL_TEST, "----------kafka协议简单消费测试开始,测试编号[{}]----------", testNum);
         // 1. 设置消费者配置参数
         Properties props = new Properties();
         // Kafka 集群地址，多个用逗号分隔
@@ -164,5 +144,7 @@ public class KotTestServiceImpl implements KotTestService {
         } catch (InterruptedException e) {
             log.error(PROTOCOL_TEST,"kafka协议简单消费测试失败",e);
         }
+        log.info(PROTOCOL_TEST, "----------kafka协议简单消费测试结束,测试编号[{}]----------", testNum);
+        return "测试完毕，请查看logs/protocol_test.log中测试编号[" + testNum + "]之间的日志";
     }
 }

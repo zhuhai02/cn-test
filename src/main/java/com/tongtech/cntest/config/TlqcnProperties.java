@@ -174,6 +174,9 @@ public class TlqcnProperties {
         private String webServiceUrl;
         private String topic;
         private int msgNum;
+        private boolean enabledJms1PubSubTest;
+        private boolean enabledJms1P2PTest;
+        private boolean enabledJms2PubSubTest;
         private boolean enabledJms2P2PTest;
     }
 }

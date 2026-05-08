@@ -75,6 +75,7 @@ public class KotTestServiceImpl implements KotTestService {
         // 优化配置
         props.put(ProducerConfig.ACKS_CONFIG, "all");  // 所有副本确认
         props.put(ProducerConfig.RETRIES_CONFIG, 3);  // 重试次数
+        props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, false);  // 关闭幂等性，避免INIT_PRODUCER_ID请求失败
         props.put(ProducerConfig.BATCH_SIZE_CONFIG, 16384);  // 批次大小
         props.put(ProducerConfig.LINGER_MS_CONFIG, 1);  // 等待时间
         props.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 33554432);  // 缓冲区大小
@@ -131,16 +132,6 @@ public class KotTestServiceImpl implements KotTestService {
             // 3. 订阅主题（可以订阅一个或多个）
             consumer.subscribe(Collections.singletonList(topic));
 
-            KafkaProducer<String, String> producer = createProducer();
-
-            for (int i = 0; i < msgNum; i++) {
-                Date date = new Date();
-                String msgStr = "Kafka协议发送消息，num:" + i + ",time:" + date.getTime();
-                ProducerRecord<String, String> record = new ProducerRecord<>(topic, msgStr);
-                RecordMetadata metadata = producer.send(record).get();
-                log.info(PROTOCOL_TEST, msgStr + "，partition：<{}>，offset：<{}>", metadata.partition(), metadata.offset());
-            }
-
             int i=0;
 
             while (i<20) {
@@ -157,11 +148,21 @@ public class KotTestServiceImpl implements KotTestService {
                 Thread.sleep(1000 * 3);
             }
 
+            /*KafkaProducer<String, String> producer = createProducer();
+
+            for (int j = 0; j < msgNum; j++) {
+                Date date = new Date();
+                String msgStr = "Kafka协议发送消息，num:" + j + ",time:" + date.getTime();
+                ProducerRecord<String, String> record = new ProducerRecord<>(topic, msgStr);
+                RecordMetadata metadata = producer.send(record).get();
+                log.info(PROTOCOL_TEST, msgStr + "，partition：<{}>，offset：<{}>", metadata.partition(), metadata.offset());
+            }*/
+
             log.info(PROTOCOL_TEST, "kafka协议简单消费测试完成");
-            producer.close();
-        } catch (ExecutionException e) {
+            //producer.close();
+        } /*catch (ExecutionException e) {
             log.error(PROTOCOL_TEST,"kafka协议简单消费测试失败",e);
-        } catch (InterruptedException e) {
+        }*/ catch (InterruptedException e) {
             log.error(PROTOCOL_TEST,"kafka协议简单消费测试失败",e);
         }
     }

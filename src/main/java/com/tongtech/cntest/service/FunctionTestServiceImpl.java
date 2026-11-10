@@ -20,6 +20,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
 import java.text.MessageFormat;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -32,7 +34,9 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class FunctionTestServiceImpl implements FunctionTestService {
@@ -146,6 +150,21 @@ public class FunctionTestServiceImpl implements FunctionTestService {
         }
         if (tlqcnProperties.getFunctionTestConfig().isEnabledTransactionTest()) {
             transactionTest();
+        }
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledBatchSendTest()) {
+            batchSendTest();
+        }
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledManualAckTest()) {
+            manualAckTest();
+        }
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledAutoDeleteSubTest()) {
+            autoDeleteSubTest();
+        }
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledMaxMessageSizeRejectTest()) {
+            maxMessageSizeRejectTest();
+        }
+        if (tlqcnProperties.getFunctionTestConfig().isEnabledBackpressureTest()) {
+            backpressureTest();
         }
     }
 
@@ -911,5 +930,741 @@ public class FunctionTestServiceImpl implements FunctionTestService {
             log.error("客户端创建失败", e);
         }
         log.info(FUNCTION_TEST, "--------------事务测试完毕---------------");
+    }
+
+    @Override
+    public void batchSendTest() {
+        List<Integer> batchSizes = tlqcnProperties.getFunctionTestConfig().getBatchSendSizes();
+        if (batchSizes == null || batchSizes.isEmpty()) {
+            batchSizes = Lists.newArrayList(500, 1000);
+        }
+        for (int batchSize : batchSizes) {
+            batchSendTest(batchSize);
+        }
+    }
+
+    /**
+     * 批量发送消息测试
+     *
+     * @param batchSize 批量发送的消息数量
+     */
+    private void batchSendTest(int batchSize) {
+        String batchTopic = topic + "_batch_" + batchSize;
+        clearAndCreateTopic(batchTopic);
+        log.info(FUNCTION_TEST, "--------批量发送消息测试开始，批量数量<{}>----------", batchSize);
+        Producer<Long> producer = null;
+        try {
+            // 创建消费者
+            CountDownLatch receiveLatch = new CountDownLatch(batchSize);
+            AtomicInteger receiveCount = new AtomicInteger(0);
+            Consumer<Long> consumer = createConsumer(batchTopic, null, "batch_sub",
+                    "batch_consumer", SubscriptionType.Exclusive, Schema.INT64);
+
+            // 覆写消费者的消息监听器以统计接收数量
+            // 由于 createConsumer 使用了 messageListener，这里我们需要重新创建一个带计数的消费者
+            consumer.close();
+
+            Consumer<Long> batchConsumer = tlqcnClient.newConsumer(Schema.INT64)
+                    .topic(batchTopic)
+                    .consumerName("batch_consumer")
+                    .subscriptionName("batch_sub")
+                    .subscriptionType(SubscriptionType.Exclusive)
+                    .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                    .messageListener((MessageListener<Long>) (cons, msg) -> {
+                        log.info(FUNCTION_TEST, "批量消费消息，批量数量<{}>, 消息内容<{}>", batchSize, msg.getValue());
+                        try {
+                            cons.acknowledge(msg);
+                        } catch (TlqcnClientException e) {
+                            log.error("消息确认异常", e);
+                        }
+                        receiveLatch.countDown();
+                    })
+                    .subscribe();
+
+            Thread.sleep(3000);
+
+            // 创建生产者并批量发送消息
+            producer = createProducer(batchTopic, Schema.INT64);
+            List<MessageId> messageIds = new ArrayList<>();
+            for (long i = 0; i < batchSize; i++) {
+                log.info(FUNCTION_TEST, "批量发送消息，批量数量<{}>, 消息内容<{}>", batchSize, i);
+                MessageId send = producer.send(i);
+                messageIds.add(send);
+            }
+            log.info(FUNCTION_TEST, "批量发送完毕，批量数量<{}>, 共发送<{}>条消息", batchSize, messageIds.size());
+
+            // 等待消费者消费完毕
+            boolean completed = receiveLatch.await(60, TimeUnit.SECONDS);
+            int received = batchSize - (int) receiveLatch.getCount();
+            if (completed && receiveLatch.getCount() == 0) {
+                log.info(FUNCTION_TEST, "批量发送测试通过，批量数量<{}>, 发送<{}>条，消费<{}>条",
+                        batchSize, messageIds.size(), received);
+            } else {
+                log.error(FUNCTION_TEST, "批量发送测试失败，批量数量<{}>, 发送<{}>条，消费<{}>条，超时未消费完",
+                        batchSize, messageIds.size(), received);
+            }
+
+            batchConsumer.close();
+            log.info(FUNCTION_TEST, "--------批量发送消息测试完毕，批量数量<{}>----------", batchSize);
+        } catch (TlqcnClientException | InterruptedException e) {
+            log.error("批量发送测试异常，批量数量<{}>", batchSize, e);
+        } finally {
+            try {
+                if (producer != null) {
+                    producer.close();
+                }
+            } catch (TlqcnClientException e) {
+                log.error("生产者关闭异常", e);
+            }
+        }
+    }
+
+    /**
+     * 手动 ACK / NACK 测试：
+     * 1）ACK 后消息从订阅中删除，不会再次投递
+     * 2）NACK 后消息重新入队，在 negativeAckRedeliveryDelay 后再次投递
+     */
+    @Override
+    public void manualAckTest() {
+        String manualTopic = topic + "_manual_ack";
+        clearAndCreateTopic(manualTopic);
+        log.info(FUNCTION_TEST, "--------手动ACK/NACK测试开始----------");
+        Producer<String> producer = null;
+        Consumer<String> consumer = null;
+        // NACK 后重新投递的等待时间（秒），receive 超时参数需要 int
+        final int nackRedeliveryDelaySec = 5;
+        try {
+            // 不设置 messageListener，改为 receive 拉取，业务侧显式 ACK / NACK
+            consumer = tlqcnClient.newConsumer(Schema.STRING)
+                    .topic(manualTopic)
+                    .consumerName("manual_ack_consumer")
+                    .subscriptionName("manual_ack_sub")
+                    .subscriptionType(SubscriptionType.Exclusive)
+                    .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                    .ackTimeout(30, TimeUnit.SECONDS)
+                    .negativeAckRedeliveryDelay(nackRedeliveryDelaySec, TimeUnit.SECONDS)
+                    .subscribe();
+            log.info(FUNCTION_TEST, "创建消费者成功，negativeAckRedeliveryDelay={}s", nackRedeliveryDelaySec);
+
+            Thread.sleep(2000);
+            producer = createProducer(manualTopic, Schema.STRING);
+
+            // ========== 阶段1：ACK → 消息删除，不再投递 ==========
+            log.info(FUNCTION_TEST, "+++++阶段1：ACK 后删除消息+++++");
+            String ackBody = "ack-then-delete-msg";
+            MessageId ackSendId = producer.send(ackBody);
+            log.info(FUNCTION_TEST, "发送待ACK消息，内容<{}>, 消息id<{}>", ackBody, ackSendId);
+
+            Message<String> ackMsg = consumer.receive(10, TimeUnit.SECONDS);
+            if (ackMsg == null) {
+                log.error(FUNCTION_TEST, "阶段1失败，未收到待ACK消息");
+            } else {
+                log.info(FUNCTION_TEST, "收到消息（准备ACK），内容<{}>, 消息id<{}>, redeliveryCount<{}>",
+                        ackMsg.getValue(), ackMsg.getMessageId(), ackMsg.getRedeliveryCount());
+                consumer.acknowledge(ackMsg);
+                log.info(FUNCTION_TEST, "已手动ACK，消息应从订阅中删除，内容<{}>, 消息id<{}>",
+                        ackMsg.getValue(), ackMsg.getMessageId());
+
+                // 等待超过 nack 重投时间，确认 ACK 后的消息不会再来
+                log.info(FUNCTION_TEST, "等待{}s，验证ACK后的消息不会再次投递...", nackRedeliveryDelaySec + 2);
+                Thread.sleep((nackRedeliveryDelaySec + 2) * 1000);
+
+                Message<String> afterAck = consumer.receive(3, TimeUnit.SECONDS);
+                if (afterAck == null) {
+                    log.info(FUNCTION_TEST, "阶段1通过：ACK后未再收到消息，消息已删除");
+                } else {
+                    log.error(FUNCTION_TEST, "阶段1失败：ACK后仍收到消息，内容<{}>, 消息id<{}>, redeliveryCount<{}>",
+                            afterAck.getValue(), afterAck.getMessageId(), afterAck.getRedeliveryCount());
+                    // 清理意外收到的消息，避免干扰阶段2
+                    consumer.acknowledge(afterAck);
+                }
+            }
+
+            // ========== 阶段2：NACK → 重新入队并再次投递 ==========
+            log.info(FUNCTION_TEST, "+++++阶段2：NACK 后重新入队+++++");
+            String nackBody = "nack-then-requeue-msg";
+            MessageId nackSendId = producer.send(nackBody);
+            log.info(FUNCTION_TEST, "发送待NACK消息，内容<{}>, 消息id<{}>", nackBody, nackSendId);
+
+            Message<String> nackMsg = consumer.receive(10, TimeUnit.SECONDS);
+            if (nackMsg == null) {
+                log.error(FUNCTION_TEST, "阶段2失败，未收到待NACK消息");
+            } else {
+                log.info(FUNCTION_TEST, "首次收到消息（准备NACK），内容<{}>, 消息id<{}>, redeliveryCount<{}>",
+                        nackMsg.getValue(), nackMsg.getMessageId(), nackMsg.getRedeliveryCount());
+                consumer.negativeAcknowledge(nackMsg);
+                log.info(FUNCTION_TEST, "已手动NACK，消息将重新入队，内容<{}>, 消息id<{}>",
+                        nackMsg.getValue(), nackMsg.getMessageId());
+
+                log.info(FUNCTION_TEST, "等待 negativeAckRedeliveryDelay={}s，观察消息重新入队投递...",
+                        nackRedeliveryDelaySec);
+                Message<String> requeued = consumer.receive(nackRedeliveryDelaySec + 10, TimeUnit.SECONDS);
+                if (requeued == null) {
+                    log.error(FUNCTION_TEST, "阶段2失败：NACK后未收到重新入队的消息");
+                } else {
+                    log.info(FUNCTION_TEST, "收到重新入队消息，内容<{}>, 消息id<{}>, redeliveryCount<{}>",
+                            requeued.getValue(), requeued.getMessageId(), requeued.getRedeliveryCount());
+                    if (nackBody.equals(requeued.getValue())) {
+                        log.info(FUNCTION_TEST, "阶段2通过：NACK后消息重新入队并再次投递");
+                    } else {
+                        log.error(FUNCTION_TEST, "阶段2异常：重投消息内容不匹配，期望<{}>, 实际<{}>",
+                                nackBody, requeued.getValue());
+                    }
+                    // 最终 ACK，删除该消息，避免残留
+                    consumer.acknowledge(requeued);
+                    log.info(FUNCTION_TEST, "对重投消息执行ACK，消息删除，内容<{}>, 消息id<{}>",
+                            requeued.getValue(), requeued.getMessageId());
+                }
+            }
+
+            log.info(FUNCTION_TEST, "--------手动ACK/NACK测试完毕----------");
+        } catch (TlqcnClientException | InterruptedException e) {
+            log.error(FUNCTION_TEST, "手动ACK/NACK测试异常", e);
+        } finally {
+            try {
+                if (consumer != null) {
+                    consumer.close();
+                    log.info("消费者<{}>关闭成功", consumer.getConsumerName());
+                }
+            } catch (TlqcnClientException e) {
+                log.error("消费者关闭异常", e);
+            }
+            try {
+                if (producer != null) {
+                    producer.close();
+                    log.info("生产者关闭成功");
+                }
+            } catch (TlqcnClientException e) {
+                log.error("生产者关闭异常", e);
+            }
+        }
+    }
+
+    /**
+     * 自动删除订阅测试：
+     * 1）NonDurable：最后消费者断开后，订阅自动删除
+     * 2）Durable（对照）：消费者断开后，订阅仍然保留
+     */
+    @Override
+    public void autoDeleteSubTest() {
+        String autoDeleteTopic = topic + "_auto_delete_sub";
+        clearAndCreateTopic(autoDeleteTopic);
+        log.info(FUNCTION_TEST, "--------自动删除订阅测试开始----------");
+
+        final String nonDurableSub = "auto_delete_nondurable_sub";
+        final String durableSub = "auto_delete_durable_sub";
+        Consumer<String> nonDurableConsumer = null;
+        Consumer<String> durableConsumer = null;
+
+        try {
+            // ========== 阶段1：NonDurable 订阅，最后消费者断开后自动删除 ==========
+            log.info(FUNCTION_TEST, "+++++阶段1：NonDurable 订阅，消费者断开后应自动删除+++++");
+            nonDurableConsumer = tlqcnClient.newConsumer(Schema.STRING)
+                    .topic(autoDeleteTopic)
+                    .consumerName("auto_delete_nondurable_consumer")
+                    .subscriptionName(nonDurableSub)
+                    .subscriptionType(SubscriptionType.Exclusive)
+                    .subscriptionMode(SubscriptionMode.NonDurable)
+                    .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                    .subscribe();
+            log.info(FUNCTION_TEST, "创建 NonDurable 消费者成功，subscription<{}>", nonDurableSub);
+
+            // 给 broker 一点时间注册订阅
+            Thread.sleep(2000);
+            List<String> subsAfterCreate = tlqcnAdmin.topics().getSubscriptions(autoDeleteTopic);
+            log.info(FUNCTION_TEST, "消费者在线时订阅列表: {}", subsAfterCreate);
+            if (subsAfterCreate != null && subsAfterCreate.contains(nonDurableSub)) {
+                log.info(FUNCTION_TEST, "NonDurable 订阅创建成功，subscription<{}> 存在", nonDurableSub);
+            } else {
+                // 部分实现上 NonDurable 可能不落持久元数据，这里仍继续验证断开后不存在
+                log.warn(FUNCTION_TEST, "Admin 未列出 NonDurable 订阅（可能未持久化），继续验证断开后状态，当前列表: {}",
+                        subsAfterCreate);
+            }
+
+            nonDurableConsumer.close();
+            nonDurableConsumer = null;
+            log.info(FUNCTION_TEST, "已关闭 NonDurable 消费者，等待订阅自动删除...");
+            Thread.sleep(3000);
+
+            List<String> subsAfterClose = tlqcnAdmin.topics().getSubscriptions(autoDeleteTopic);
+            log.info(FUNCTION_TEST, "消费者断开后订阅列表: {}", subsAfterClose);
+            if (subsAfterClose == null || !subsAfterClose.contains(nonDurableSub)) {
+                log.info(FUNCTION_TEST, "阶段1通过：最后消费者断开后，NonDurable 订阅<{}>已自动删除", nonDurableSub);
+            } else {
+                log.error(FUNCTION_TEST, "阶段1失败：消费者断开后 NonDurable 订阅<{}>仍存在，列表: {}",
+                        nonDurableSub, subsAfterClose);
+            }
+
+            // ========== 阶段2：Durable 订阅对照，断开后仍保留 ==========
+            log.info(FUNCTION_TEST, "+++++阶段2：Durable 订阅对照，消费者断开后应保留+++++");
+            durableConsumer = tlqcnClient.newConsumer(Schema.STRING)
+                    .topic(autoDeleteTopic)
+                    .consumerName("auto_delete_durable_consumer")
+                    .subscriptionName(durableSub)
+                    .subscriptionType(SubscriptionType.Exclusive)
+                    .subscriptionMode(SubscriptionMode.Durable)
+                    .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                    .subscribe();
+            log.info(FUNCTION_TEST, "创建 Durable 消费者成功，subscription<{}>", durableSub);
+
+            Thread.sleep(2000);
+            List<String> durableSubsOnline = tlqcnAdmin.topics().getSubscriptions(autoDeleteTopic);
+            log.info(FUNCTION_TEST, "Durable 消费者在线时订阅列表: {}", durableSubsOnline);
+            if (durableSubsOnline == null || !durableSubsOnline.contains(durableSub)) {
+                log.error(FUNCTION_TEST, "阶段2准备失败：Durable 订阅<{}>未出现在列表中: {}",
+                        durableSub, durableSubsOnline);
+            }
+
+            durableConsumer.close();
+            durableConsumer = null;
+            log.info(FUNCTION_TEST, "已关闭 Durable 消费者，验证订阅是否保留...");
+            Thread.sleep(3000);
+
+            List<String> durableSubsAfterClose = tlqcnAdmin.topics().getSubscriptions(autoDeleteTopic);
+            log.info(FUNCTION_TEST, "Durable 消费者断开后订阅列表: {}", durableSubsAfterClose);
+            if (durableSubsAfterClose != null && durableSubsAfterClose.contains(durableSub)) {
+                log.info(FUNCTION_TEST, "阶段2通过：Durable 订阅<{}>在消费者断开后仍然保留", durableSub);
+            } else {
+                log.error(FUNCTION_TEST, "阶段2失败：Durable 订阅<{}>在消费者断开后消失，列表: {}",
+                        durableSub, durableSubsAfterClose);
+            }
+
+            // 清理 Durable 订阅残留
+            try {
+                tlqcnAdmin.topics().deleteSubscription(autoDeleteTopic, durableSub, true);
+                log.info(FUNCTION_TEST, "清理 Durable 订阅<{}>成功", durableSub);
+            } catch (TlqcnAdminException e) {
+                log.warn(FUNCTION_TEST, "清理 Durable 订阅<{}>失败（可忽略）: {}", durableSub, e.getMessage());
+            }
+
+            log.info(FUNCTION_TEST, "--------自动删除订阅测试完毕----------");
+        } catch (TlqcnClientException | InterruptedException | TlqcnAdminException e) {
+            log.error(FUNCTION_TEST, "自动删除订阅测试异常", e);
+        } finally {
+            try {
+                if (nonDurableConsumer != null) {
+                    nonDurableConsumer.close();
+                }
+            } catch (TlqcnClientException e) {
+                log.error("NonDurable 消费者关闭异常", e);
+            }
+            try {
+                if (durableConsumer != null) {
+                    durableConsumer.close();
+                }
+            } catch (TlqcnClientException e) {
+                log.error("Durable 消费者关闭异常", e);
+            }
+        }
+    }
+
+    /**
+     * 消息超长拒绝测试：
+     * 1）设置 topic 的 maxMessageSize
+     * 2）不超过限制的消息发送成功
+     * 3）超过限制的消息被拒绝（send 抛异常）
+     * 4）拒绝后，合法消息仍可正常发送
+     */
+    @Override
+    public void maxMessageSizeRejectTest() {
+        String sizeTopic = topic + "_max_msg_size";
+        clearAndCreateTopic(sizeTopic);
+        log.info(FUNCTION_TEST, "--------消息超长拒绝测试开始----------");
+
+        // 限制单条消息最大 1024 字节
+        final int maxMessageSize = 1024;
+        Producer<byte[]> producer = null;
+        try {
+            tlqcnAdmin.topicPolicies().setMaxMessageSize(sizeTopic, maxMessageSize);
+            log.info(FUNCTION_TEST, "已设置 topic<{}> maxMessageSize={} 字节", sizeTopic, maxMessageSize);
+
+            // 等待策略生效
+            Thread.sleep(3000);
+            Integer applied = null;
+            try {
+                applied = tlqcnAdmin.topicPolicies().getMaxMessageSize(sizeTopic);
+            } catch (TlqcnAdminException e) {
+                log.warn(FUNCTION_TEST, "读取 maxMessageSize 失败（继续测试）: {}", e.getMessage());
+            }
+            log.info(FUNCTION_TEST, "当前生效 maxMessageSize={}", applied);
+
+            // 关闭 batching / chunking，确保超长消息不会被拆包绕过限制
+            producer = tlqcnClient.newProducer(Schema.BYTES)
+                    .topic(sizeTopic)
+                    .enableBatching(false)
+                    .enableChunking(false)
+                    .sendTimeout(5, TimeUnit.SECONDS)
+                    .create();
+
+            // 阶段1：合法消息（小于限制）应发送成功
+            log.info(FUNCTION_TEST, "+++++阶段1：发送不超过限制的消息，应成功+++++");
+            byte[] okPayload = new byte[maxMessageSize / 2];
+            for (int i = 0; i < okPayload.length; i++) {
+                okPayload[i] = (byte) ('A' + (i % 26));
+            }
+            try {
+                MessageId okId = producer.send(okPayload);
+                log.info(FUNCTION_TEST, "阶段1通过：合法消息发送成功，size={}字节, messageId<{}>",
+                        okPayload.length, okId);
+            } catch (TlqcnClientException e) {
+                log.error(FUNCTION_TEST, "阶段1失败：合法消息发送被拒绝，size={}字节", okPayload.length, e);
+            }
+
+            // 阶段2：超长消息应被拒绝
+            log.info(FUNCTION_TEST, "+++++阶段2：发送超过限制的消息，应按拒绝策略处理+++++");
+            byte[] overPayload = new byte[maxMessageSize + 1];
+            for (int i = 0; i < overPayload.length; i++) {
+                overPayload[i] = (byte) ('a' + (i % 26));
+            }
+            try {
+                MessageId overId = producer.send(overPayload);
+                log.error(FUNCTION_TEST, "阶段2失败：超长消息未被拒绝，size={}字节, messageId<{}>",
+                        overPayload.length, overId);
+            } catch (TlqcnClientException e) {
+                log.info(FUNCTION_TEST, "阶段2通过：超长消息已被拒绝，size={}字节, maxMessageSize={}, 异常: {}",
+                        overPayload.length, maxMessageSize, e.getMessage());
+            }
+
+            // 阶段3：拒绝后，合法消息仍应可发送（broker/producer 未被异常状态污染）
+            log.info(FUNCTION_TEST, "+++++阶段3：拒绝后再次发送合法消息，应成功+++++");
+            byte[] okPayload2 = new byte[64];
+            for (int i = 0; i < okPayload2.length; i++) {
+                okPayload2[i] = (byte) i;
+            }
+            try {
+                MessageId okId2 = producer.send(okPayload2);
+                log.info(FUNCTION_TEST, "阶段3通过：拒绝后合法消息仍可发送，size={}字节, messageId<{}>",
+                        okPayload2.length, okId2);
+            } catch (TlqcnClientException e) {
+                log.error(FUNCTION_TEST, "阶段3失败：拒绝后合法消息无法发送，size={}字节", okPayload2.length, e);
+            }
+
+            log.info(FUNCTION_TEST, "--------消息超长拒绝测试完毕----------");
+        } catch (TlqcnAdminException e) {
+            log.error(FUNCTION_TEST, "设置/读取 maxMessageSize 失败", e);
+        } catch (TlqcnClientException | InterruptedException e) {
+            log.error(FUNCTION_TEST, "消息超长拒绝测试异常", e);
+        } finally {
+            try {
+                if (producer != null) {
+                    producer.close();
+                }
+            } catch (TlqcnClientException e) {
+                log.error("生产者关闭异常", e);
+            }
+            try {
+                tlqcnAdmin.topicPolicies().removeMaxMessageSize(sizeTopic);
+                log.info(FUNCTION_TEST, "已清理 topic<{}> maxMessageSize 策略", sizeTopic);
+            } catch (TlqcnAdminException e) {
+                log.warn(FUNCTION_TEST, "清理 maxMessageSize 失败（可忽略）: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 背压测试（生产超过处理速率）：
+     * 1）Producer 使用较小 maxPendingMessages + blockIfQueueFull
+     * 2）Consumer 故意慢消费，制造处理不过来
+     * 3）持续高速发送一段时间，采样堆内存
+     * 预期：触发背压（send 阻塞变慢），堆内存有上界，进程不 OOM
+     * 参数见 application.yml → tlqcn.function-test-config.backpressure-test-config
+     */
+    @Override
+    public void backpressureTest() {
+        String bpTopic = topic + "_backpressure";
+        clearAndCreateTopic(bpTopic);
+        log.info(FUNCTION_TEST, "--------背压测试开始----------");
+
+        TlqcnProperties.BackpressureTestConfig bpCfg = tlqcnProperties.getFunctionTestConfig().getBackpressureTestConfig();
+        if (bpCfg == null) {
+            bpCfg = new TlqcnProperties.BackpressureTestConfig();
+            log.warn(FUNCTION_TEST, "未配置 backpressure-test-config，使用默认参数");
+        }
+
+        final int maxPendingMessages = bpCfg.getMaxPendingMessages() > 0 ? bpCfg.getMaxPendingMessages() : 50;
+        final int msgSize = bpCfg.getMsgSize() > 0 ? bpCfg.getMsgSize() : 32768;
+        final long testDurationMs = bpCfg.getTestDurationMs() > 0 ? bpCfg.getTestDurationMs() : 60_000L;
+        final long slowConsumeSleepMs = bpCfg.getSlowConsumeSleepMs() >= 0 ? bpCfg.getSlowConsumeSleepMs() : 200L;
+        final int receiverQueueSize = bpCfg.getReceiverQueueSize() > 0 ? bpCfg.getReceiverQueueSize() : 10;
+        final long heapGrowthLimitBytes = (bpCfg.getHeapGrowthLimitMb() > 0 ? bpCfg.getHeapGrowthLimitMb() : 128L) * 1024 * 1024;
+        final double heapMaxUsageRatio = bpCfg.getHeapMaxUsageRatio() > 0 ? bpCfg.getHeapMaxUsageRatio() : 0.80;
+        final boolean blockIfQueueFull = bpCfg.isBlockIfQueueFull();
+        final int sendTimeoutSec = bpCfg.getSendTimeoutSec() > 0 ? bpCfg.getSendTimeoutSec() : 30;
+        final long heapSampleIntervalMs = bpCfg.getHeapSampleIntervalMs() > 0 ? bpCfg.getHeapSampleIntervalMs() : 2000L;
+        final long blockThresholdMs = bpCfg.getBlockThresholdMs() > 0 ? bpCfg.getBlockThresholdMs() : 100L;
+        final long avgSendCostThresholdMs = bpCfg.getAvgSendCostThresholdMs() > 0 ? bpCfg.getAvgSendCostThresholdMs() : 50L;
+
+        MemoryMXBean memoryMXBean = ManagementFactory.getMemoryMXBean();
+        long baselineHeap = memoryMXBean.getHeapMemoryUsage().getUsed();
+        long maxHeap = memoryMXBean.getHeapMemoryUsage().getMax();
+        log.info(FUNCTION_TEST,
+                "背压参数: maxPending={}, msgSize={}KB, duration={}s, slowConsumeSleep={}ms, receiverQueueSize={}, "
+                        + "blockIfQueueFull={}, sendTimeout={}s, heapGrowthLimit={}MB, heapMaxUsageRatio={}, "
+                        + "blockThreshold={}ms, avgSendCostThreshold={}ms",
+                maxPendingMessages, msgSize / 1024, testDurationMs / 1000, slowConsumeSleepMs, receiverQueueSize,
+                blockIfQueueFull, sendTimeoutSec, heapGrowthLimitBytes / (1024 * 1024), heapMaxUsageRatio,
+                blockThresholdMs, avgSendCostThresholdMs);
+        log.info(FUNCTION_TEST, "堆基线 used={}MB, max={}MB",
+                baselineHeap / (1024 * 1024),
+                maxHeap > 0 ? maxHeap / (1024 * 1024) : -1);
+
+        Producer<byte[]> producer = null;
+        Consumer<byte[]> consumer = null;
+        AtomicBoolean running = new AtomicBoolean(true);
+        AtomicLong sendSuccess = new AtomicLong(0);
+        AtomicLong sendFail = new AtomicLong(0);
+        AtomicLong sendBlockedCount = new AtomicLong(0);
+        AtomicLong totalSendCostMs = new AtomicLong(0);
+        AtomicLong consumeCount = new AtomicLong(0);
+        AtomicLong peakHeap = new AtomicLong(baselineHeap);
+        AtomicInteger oomFlag = new AtomicInteger(0);
+        // 慢消费 listener 在途数量，关闭前先排空，避免 close 后 ACK 报 State: Closed
+        AtomicInteger inflightConsume = new AtomicInteger(0);
+
+        Thread producerThread = null;
+        Thread monitorThread = null;
+
+        try {
+            // 慢消费者：拉到消息后 sleep，模拟处理速率不足
+            consumer = tlqcnClient.newConsumer(Schema.BYTES)
+                    .topic(bpTopic)
+                    .consumerName("backpressure_consumer")
+                    .subscriptionName("backpressure_sub")
+                    .subscriptionType(SubscriptionType.Shared)
+                    .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                    .receiverQueueSize(receiverQueueSize)
+                    .messageListener((MessageListener<byte[]>) (c, msg) -> {
+                        // 测试已结束则不再处理，避免 close 后 ACK
+                        if (!running.get()) {
+                            return;
+                        }
+                        inflightConsume.incrementAndGet();
+                        try {
+                            if (slowConsumeSleepMs > 0) {
+                                Thread.sleep(slowConsumeSleepMs);
+                            }
+                            // sleep 期间可能已经开始收尾
+                            if (!running.get()) {
+                                return;
+                            }
+                            c.acknowledge(msg);
+                            consumeCount.incrementAndGet();
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        } catch (TlqcnClientException e) {
+                            // 收尾阶段 consumer 已关闭是预期竞态，不打 ERROR
+                            if (!running.get() || isConsumerClosedException(e)) {
+                                log.debug(FUNCTION_TEST, "慢消费 ACK 跳过（consumer 已关闭/测试结束）: {}",
+                                        e.getMessage());
+                            } else {
+                                log.error(FUNCTION_TEST, "慢消费 ACK 异常", e);
+                            }
+                        } finally {
+                            inflightConsume.decrementAndGet();
+                        }
+                    })
+                    .subscribe();
+            log.info(FUNCTION_TEST, "慢消费者已启动，处理间隔约 {}ms, receiverQueueSize={}",
+                    slowConsumeSleepMs, receiverQueueSize);
+
+            producer = tlqcnClient.newProducer(Schema.BYTES)
+                    .topic(bpTopic)
+                    .enableBatching(false)
+                    .enableChunking(false)
+                    .maxPendingMessages(maxPendingMessages)
+                    .blockIfQueueFull(blockIfQueueFull)
+                    .sendTimeout(sendTimeoutSec, TimeUnit.SECONDS)
+                    .create();
+            log.info(FUNCTION_TEST, "Producer 已创建: maxPendingMessages={}, blockIfQueueFull={}",
+                    maxPendingMessages, blockIfQueueFull);
+
+            Thread.sleep(2000);
+
+            byte[] payload = new byte[msgSize];
+            for (int i = 0; i < payload.length; i++) {
+                payload[i] = (byte) (i % 256);
+            }
+
+            // 堆采样线程
+            monitorThread = new Thread(() -> {
+                while (running.get()) {
+                    try {
+                        long used = memoryMXBean.getHeapMemoryUsage().getUsed();
+                        peakHeap.accumulateAndGet(used, Math::max);
+                        log.info(FUNCTION_TEST,
+                                "堆采样 used={}MB, peak={}MB, sendOk={}, sendFail={}, blocked(>{}ms)={}, consumed={}",
+                                used / (1024 * 1024),
+                                peakHeap.get() / (1024 * 1024),
+                                sendSuccess.get(),
+                                sendFail.get(),
+                                blockThresholdMs,
+                                sendBlockedCount.get(),
+                                consumeCount.get());
+                        Thread.sleep(heapSampleIntervalMs);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    } catch (OutOfMemoryError oom) {
+                        oomFlag.set(1);
+                        log.error(FUNCTION_TEST, "监控线程捕获 OOM", oom);
+                        break;
+                    }
+                }
+            }, "backpressure-heap-monitor");
+            monitorThread.setDaemon(true);
+            monitorThread.start();
+
+            // 高速生产线程：同步 send，blockIfQueueFull 时会阻塞
+            Producer<byte[]> finalProducer = producer;
+            producerThread = new Thread(() -> {
+                long deadline = System.currentTimeMillis() + testDurationMs;
+                while (running.get() && System.currentTimeMillis() < deadline) {
+                    long start = System.currentTimeMillis();
+                    try {
+                        finalProducer.send(payload);
+                        long cost = System.currentTimeMillis() - start;
+                        totalSendCostMs.addAndGet(cost);
+                        sendSuccess.incrementAndGet();
+                        if (cost > blockThresholdMs) {
+                            sendBlockedCount.incrementAndGet();
+                        }
+                    } catch (TlqcnClientException e) {
+                        long cost = System.currentTimeMillis() - start;
+                        totalSendCostMs.addAndGet(cost);
+                        sendFail.incrementAndGet();
+                        if (cost > blockThresholdMs) {
+                            sendBlockedCount.incrementAndGet();
+                        }
+                        log.warn(FUNCTION_TEST, "发送失败（可能是超时/背压相关）: {}", e.getMessage());
+                    } catch (OutOfMemoryError oom) {
+                        oomFlag.set(1);
+                        log.error(FUNCTION_TEST, "生产线程捕获 OOM", oom);
+                        break;
+                    }
+                }
+            }, "backpressure-producer");
+            producerThread.start();
+
+            log.info(FUNCTION_TEST, "开始高压发送，持续 {} 秒...", testDurationMs / 1000);
+            producerThread.join(testDurationMs + 30_000);
+            running.set(false);
+            if (monitorThread.isAlive()) {
+                monitorThread.join(5000);
+            }
+
+            long finalHeap = memoryMXBean.getHeapMemoryUsage().getUsed();
+            long peak = peakHeap.get();
+            long growth = Math.max(0, peak - baselineHeap);
+            long success = sendSuccess.get();
+            long fail = sendFail.get();
+            long blocked = sendBlockedCount.get();
+            long consumed = consumeCount.get();
+            long avgSendCost = success + fail > 0 ? totalSendCostMs.get() / (success + fail) : 0;
+
+            log.info(FUNCTION_TEST, "压测统计: sendOk={}, sendFail={}, blocked(>{}ms)={}, consumed={}, avgSendCost={}ms",
+                    success, fail, blockThresholdMs, blocked, consumed, avgSendCost);
+            log.info(FUNCTION_TEST, "内存统计: baseline={}MB, peak={}MB, final={}MB, growth={}MB",
+                    baselineHeap / (1024 * 1024),
+                    peak / (1024 * 1024),
+                    finalHeap / (1024 * 1024),
+                    growth / (1024 * 1024));
+
+            // ---- 判定 ----
+            boolean noOom = oomFlag.get() == 0;
+            boolean heapBounded = growth <= heapGrowthLimitBytes
+                    && (maxHeap <= 0 || peak <= (long) (maxHeap * heapMaxUsageRatio));
+            boolean backpressureObserved = blocked > 0 || avgSendCost > avgSendCostThresholdMs || fail > 0;
+            boolean overload = success > consumed;
+
+            if (noOom) {
+                log.info(FUNCTION_TEST, "判定-无OOM: 通过");
+            } else {
+                log.error(FUNCTION_TEST, "判定-无OOM: 失败，检测到 OutOfMemoryError");
+            }
+            if (heapBounded) {
+                log.info(FUNCTION_TEST, "判定-堆有上界: 通过, growth={}MB <= limit={}MB",
+                        growth / (1024 * 1024), heapGrowthLimitBytes / (1024 * 1024));
+            } else {
+                log.error(FUNCTION_TEST, "判定-堆有上界: 失败, peak={}MB, growth={}MB, maxHeap={}MB",
+                        peak / (1024 * 1024), growth / (1024 * 1024),
+                        maxHeap > 0 ? maxHeap / (1024 * 1024) : -1);
+            }
+            if (backpressureObserved) {
+                log.info(FUNCTION_TEST, "判定-背压触发: 通过, blocked={}, avgSendCost={}ms, fail={}",
+                        blocked, avgSendCost, fail);
+            } else {
+                log.error(FUNCTION_TEST, "判定-背压触发: 失败，未观察到阻塞/变慢/受控失败（可调小 max-pending-messages 或加大 slow-consume-sleep-ms）");
+            }
+            if (overload) {
+                log.info(FUNCTION_TEST, "判定-超过处理速率: 通过, sendOk={} > consumed={}", success, consumed);
+            } else {
+                log.warn(FUNCTION_TEST, "判定-超过处理速率: 未明显成立, sendOk={}, consumed={}（可增大 slow-consume-sleep-ms）",
+                        success, consumed);
+            }
+
+            if (noOom && heapBounded && backpressureObserved) {
+                log.info(FUNCTION_TEST, "--------背压测试通过：系统稳定，未OOM，背压生效----------");
+            } else {
+                log.error(FUNCTION_TEST, "--------背压测试未通过，请检查上述判定项----------");
+            }
+        } catch (TlqcnClientException | InterruptedException e) {
+            log.error(FUNCTION_TEST, "背压测试异常", e);
+        } finally {
+            // 1) 先停生产循环与采样
+            running.set(false);
+            try {
+                if (producerThread != null && producerThread.isAlive()) {
+                    producerThread.join(3000);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            // 2) 先关 producer，避免继续推消息给 listener
+            try {
+                if (producer != null) {
+                    producer.close();
+                    producer = null;
+                }
+            } catch (TlqcnClientException e) {
+                log.error("生产者关闭异常", e);
+            }
+            // 3) 等待在途慢消费结束
+            long drainDeadline = System.currentTimeMillis()
+                    + Math.max(slowConsumeSleepMs * 2, 3000L) + 2000L;
+            while (inflightConsume.get() > 0 && System.currentTimeMillis() < drainDeadline) {
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            if (inflightConsume.get() > 0) {
+                log.warn(FUNCTION_TEST, "关闭前仍有在途消费 {} 条，继续关闭 consumer",
+                        inflightConsume.get());
+            }
+            // 4) 再关 consumer
+            try {
+                if (consumer != null) {
+                    consumer.close();
+                }
+            } catch (TlqcnClientException e) {
+                log.error("消费者关闭异常", e);
+            }
+            log.info(FUNCTION_TEST, "--------背压测试完毕----------");
+        }
+    }
+
+    /** 判断是否为 consumer 已关闭导致的 ACK 异常（收尾竞态） */
+    private static boolean isConsumerClosedException(Throwable e) {
+        Throwable t = e;
+        while (t != null) {
+            String msg = t.getMessage();
+            if (msg != null && (msg.contains("State: Closed") || msg.contains("Consumer not ready"))) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
     }
 }

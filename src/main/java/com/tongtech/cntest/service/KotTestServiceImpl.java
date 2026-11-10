@@ -79,6 +79,10 @@ public class KotTestServiceImpl implements KotTestService {
         props.put(ProducerConfig.BATCH_SIZE_CONFIG, 16384);  // 批次大小
         props.put(ProducerConfig.LINGER_MS_CONFIG, 1);  // 等待时间
         props.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 33554432);  // 缓冲区大小
+        /*props.setProperty("group.protocol", "classic");
+
+        props.put("api.version.request", "true");
+        props.put("client.dns.lookup", "use_all_dns_ips");*/
 
         return new KafkaProducer<>(props);
     }
@@ -114,8 +118,8 @@ public class KotTestServiceImpl implements KotTestService {
         Properties props = new Properties();
         // Kafka 集群地址，多个用逗号分隔
         props.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, url);
-        // 消费者组ID，同一组内的消费者共同消费订阅的主题
-        props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "simple-group");
+        // 消费者组ID使用随机UUID，避免使用之前已提交偏移量的消费者组
+        props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "simple-group-" + UUID.randomUUID());
         // 键和值的反序列化器
         props.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
@@ -125,44 +129,67 @@ public class KotTestServiceImpl implements KotTestService {
         props.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
         // 自动提交偏移量的间隔时间
         props.setProperty(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, "1000");
+        /*props.setProperty("group.protocol", "classic");
+        props.put("client.dns.lookup", "use_all_dns_ips");
+        props.put("connections.max.idle.ms", "540000");
+        props.put("request.timeout.ms", "30000");*/
 
-        // 2. 创建 Kafka 消费者实例
-        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
-
-            // 3. 订阅主题（可以订阅一个或多个）
-            consumer.subscribe(Collections.singletonList(topic));
-
-            int i=0;
-
-            while (i<20) {
-                i++;
-                // 拉取消息，超时时间为1000毫秒
-                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
-
-                for (ConsumerRecord<String, String> record : records) {
-                    log.info(PROTOCOL_TEST, "Kafka协议消费成功：<{}>", record.value());
-                }
-
-                consumer.commitSync();
-
-                Thread.sleep(1000 * 3);
-            }
-
-            /*KafkaProducer<String, String> producer = createProducer();
-
+        // 2. 先发送消息
+        KafkaProducer<String, String> producer = createProducer();
+        try {
             for (int j = 0; j < msgNum; j++) {
                 Date date = new Date();
                 String msgStr = "Kafka协议发送消息，num:" + j + ",time:" + date.getTime();
                 ProducerRecord<String, String> record = new ProducerRecord<>(topic, msgStr);
                 RecordMetadata metadata = producer.send(record).get();
                 log.info(PROTOCOL_TEST, msgStr + "，partition：<{}>，offset：<{}>", metadata.partition(), metadata.offset());
-            }*/
+            }
+            log.info(PROTOCOL_TEST, "kafka协议简单消费测试：消息发送完成，共<{}>条", msgNum);
+        } catch (Exception e) {
+            log.error(PROTOCOL_TEST, "kafka协议简单消费测试：消息发送失败", e);
+            producer.close();
+            return;
+        }
 
-            log.info(PROTOCOL_TEST, "kafka协议简单消费测试完成");
-            //producer.close();
-        } /*catch (ExecutionException e) {
+        // 3. 创建 Kafka 消费者实例
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
+
+            // 4. 订阅主题（可以订阅一个或多个）
+            consumer.subscribe(Collections.singletonList(topic));
+
+            // 等待消费者组重平衡完成，确保分区分配
+            int waitCount = 0;
+            while (consumer.assignment().isEmpty() && waitCount < 10) {
+                consumer.poll(Duration.ofMillis(100));
+                waitCount++;
+            }
+            log.info(PROTOCOL_TEST, "kafka协议简单消费测试：分区分配完成，partitions：<{}>", consumer.assignment());
+
+            int consumeCount = 0;
+            int i = 0;
+
+            while (i < 20 && consumeCount < msgNum) {
+                i++;
+                // 拉取消息，超时时间为1000毫秒
+                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
+
+                for (ConsumerRecord<String, String> record : records) {
+                    log.info(PROTOCOL_TEST, "Kafka协议消费成功：<{}>", record.value());
+                    consumeCount++;
+                }
+
+                if (!records.isEmpty()) {
+                    consumer.commitSync();
+                }
+
+                Thread.sleep(1000 * 3);
+            }
+
+            log.info(PROTOCOL_TEST, "kafka协议简单消费测试完成，共消费<{}>条消息", consumeCount);
+            producer.close();
+        } catch (InterruptedException e) {
             log.error(PROTOCOL_TEST,"kafka协议简单消费测试失败",e);
-        }*/ catch (InterruptedException e) {
+        } catch (Exception e) {
             log.error(PROTOCOL_TEST,"kafka协议简单消费测试失败",e);
         }
     }

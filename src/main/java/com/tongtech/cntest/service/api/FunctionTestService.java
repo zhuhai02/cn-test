@@ -89,4 +89,29 @@ public interface FunctionTestService {
      * 事务消息测试
      */
     void transactionTest();
+
+    /**
+     * 批量发送消息测试
+     */
+    void batchSendTest();
+
+    /**
+     * 手动ACK/NACK测试：ACK后删除消息，NACK后重新入队
+     */
+    void manualAckTest();
+
+    /**
+     * 自动删除订阅测试：NonDurable 订阅在最后消费者断开后自动删除
+     */
+    void autoDeleteSubTest();
+
+    /**
+     * 消息超长拒绝测试：超过 maxMessageSize 的消息按拒绝策略处理
+     */
+    void maxMessageSizeRejectTest();
+
+    /**
+     * 背压测试：生产超过处理速率时触发背压，系统稳定不OOM
+     */
+    void backpressureTest();
 }

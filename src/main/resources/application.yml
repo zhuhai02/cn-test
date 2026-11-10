@@ -7,14 +7,14 @@ spring:
 
 tlqcn:
   client:
-    service-url: tlqcn://10.10.22.175:6650
-    service-http-url: http://10.10.22.175:8080
+    service-url: tlqcn://10.10.22.174:6651,10.10.22.175:6651,10.10.22.176:6651
+    service-http-url: http://10.10.22.174:8081,10.10.22.175:8081,10.10.22.176:8081
     authentication:
       enabled: false
       token:
     failover-config:
-      primary-url: tlqcn://10.10.22.174:6650
-      primary-http-url: http://10.10.22.174:8080
+      primary-url: tlqcn://10.10.22.174:6651,10.10.22.175:6651,10.10.22.176:6651
+      primary-http-url: http://10.10.22.174:8081,10.10.22.175:8081,10.10.22.176:8081
       secondary-url: tlqcn://10.10.22.175:6650
       secondary-http-url: http://10.10.22.175:8080
       delay: 30
@@ -23,7 +23,7 @@ tlqcn:
       check-topic: "persistent://public/default/check_topic"
   function-test-config:
     enabled: false
-    topic: "persistent://public/default/testTopic1"
+    topic: "persistent://public/default/testTopic7"
     public-key-path: gm_-public-key.pem
     private-key-path: gm_-private-key.pem
     enabled-sync-send-test: false
@@ -41,27 +41,59 @@ tlqcn:
     enabled-gm-message-test: false
     enabled-gm-tls-test: false
     enabled-message-priority-test: false
-    enabled-failover-test: true
+    enabled-failover-test: false
+    enabled-batch-send-test: false
+    enabled-manual-ack-test: false
+    enabled-auto-delete-sub-test: false
+    enabled-max-message-size-reject-test: false
+    enabled-backpressure-test: true
+    backpressure-test-config:
+      # producer pending 上限，越小越容易触发背压
+      max-pending-messages: 50
+      # 单条消息大小（字节），默认 32KB
+      msg-size: 32768
+      # 压测持续时长（毫秒）
+      test-duration-ms: 60000
+      # 慢消费：每条消息处理休眠（毫秒）
+      slow-consume-sleep-ms: 200
+      # 消费者本地接收队列大小
+      receiver-queue-size: 10
+      # 相对基线允许的堆增长上限（MB）
+      heap-growth-limit-mb: 128
+      # 峰值堆不超过 maxHeap 的比例
+      heap-max-usage-ratio: 0.80
+      # true=队列满阻塞（背压）；false=快速失败
+      block-if-queue-full: true
+      # 发送超时（秒）
+      send-timeout-sec: 30
+      # 堆采样间隔（毫秒）
+      heap-sample-interval-ms: 2000
+      # send 耗时超过该阈值计为阻塞（毫秒）
+      block-threshold-ms: 100
+      # 平均 send 耗时超过该值也视为背压触发（毫秒）
+      avg-send-cost-threshold-ms: 50
+    batch-send-sizes: 500,1000
     consumer-num: 1
-    topic-partition-num: 1
-    msg-num: 100000
+    topic-partition-num: 3
+    msg-num: 500
   Rot-test-config:
     enabled: true
-    #url: 10.10.22.174:9876;10.10.22.175:9876;10.10.22.176:9876
-    url: 10.10.22.176:9876
-    topic: rot_test1
+    url: 10.10.22.162:30779;10.10.22.162:30780;10.10.22.162:30781
+    #url: 172.16.20.7:9876;172.16.20.10:9876;172.16.20.12:9876;172.16.20.14:9876;172.16.20.16:9876
+    #url: 10.10.22.174:9876
+    topic: test1
     producer-group: group1
     consumer-group: group1
     tag:
-    msg-num: 10
-    enabled-sync-send-test: true
+    msg-num: 20
+    enabled-sync-send-test: false
     enabled-async-send-test: false
     enabled-consumer-pull-test: false
-    enabled-consumer-push-test: false
+    enabled-consumer-push-test: true
   Aot-test-config:
-    enabled: false
+    enabled: true
     #url: 10.10.22.174:5672,10.10.22.175:5672,10.10.22.176:5672
-    url: 10.10.22.175:5682
+    url: 10.10.22.162:15783
     topic: aot_test1
     msg-num: 10
     virtual-host: vhost1
@@ -73,16 +105,17 @@ tlqcn:
     enabled-fanout-exchange-test: false
     enabled-topic-exchange-test: false
   Kot-test-config:
-    enabled: false
-    #url: 10.10.22.174:9092,10.10.22.175:9092,10.10.22.175:9092
-    url: 10.10.22.175:9092
+    enabled: true
+    url: rot1104.tlqcn:19095,rot1104.tlqcn:19096,rot1104.tlqcn:19097
+    #url: 10.10.22.175:9092
     topic: test3
     msg-num: 10
     enabled-sync-send-test: false
     enabled-simple-consumer-test: true
   Mot-test-config:
-    enabled: false
-    url: tcp://10.10.22.174:1883,tcp://10.10.22.175:1883,tcp://10.10.22.176:1883
+    enabled: true
+    #url: tcp://10.10.22.174:1883,tcp://10.10.22.175:1883,tcp://10.10.22.176:1883
+    url: tcp://10.10.22.162:15685
     topic: persistent://public/default/mqtt-topic1
     msg-num: 10
     qos: 1
@@ -104,20 +137,20 @@ tlqcn:
     enable-perf-async-test: true
     batching-max-publish-delay: 10
     batching-max-messages: 1000
-    # 每一个测试用例执行的时间
-    test-time-per-case: 360_000
+    # 每一个测试用例执行的时间，1_000是1s
+    test-time-per-case: 600_000
     # 性能日志记录时间间隔
     log-interval: 10_000
     # 每一个测试用例之间的间隔
     case-interval: 60_000
-    # 测试完毕，关闭生产者和消费者的时间
+    # 测试完毕，关闭生产者和消费者的时间aa
     close-time: 600_000
-    cron: 0 42 16 * * ?
+    cron: 0 10 16 * * ?
   perf-case-configs:
     - producer-num: 1
       consumer-num: 1
       topic-partition-num: 1
-      msg-size: 1024
+      msg-size: 8
       per-producer-thread-num: 1
       consume-after-send: false
       sync-ack: false

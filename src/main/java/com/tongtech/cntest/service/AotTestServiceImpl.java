@@ -222,7 +222,7 @@ public class AotTestServiceImpl implements AotTestService {
             };
 
             // 开始消费
-            channel.basicConsume(queueName, false, deliverCallback, consumerTag -> {
+            channel.basicConsume(directQueue, false, deliverCallback, consumerTag -> {
             });
 
             //创建生产者发送消息
@@ -262,11 +262,177 @@ public class AotTestServiceImpl implements AotTestService {
 
     @Override
     public void fanoutExchangeTest() {
+        log.info(PROTOCOL_TEST, "AMQP协议fanoutExchange测试开始");
 
+        try {
+            Connection connection = createConnection(virtualHost);
+
+            String fanoutQueue = this.queueName + "_fanout";
+            String fanoutExchange = this.exchangeName + "_fanout";
+
+            Channel channel = connection.createChannel();
+            channel.basicQos(5);
+            // 声明持久化扇形交换机
+            channel.exchangeDeclare(fanoutExchange, "fanout", true);
+            // 声明持久化队列
+            channel.queueDeclare(fanoutQueue, true, false, false, null);
+            // 绑定队列到交换机（fanout类型不需要routingKey）
+            channel.queueBind(fanoutQueue, fanoutExchange, "");
+
+            // 启用发布者确认
+            channel.confirmSelect();
+
+            //创建消费者
+            DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+                try {
+                    String message = new String(delivery.getBody(), "UTF-8");
+                    log.info(PROTOCOL_TEST, "AMQP协议fanoutExchange消费成功：<{}>", message);
+
+                    // 模拟处理时间
+                    Thread.sleep(1000);
+
+                    // 手动确认消息
+                    channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    // 拒绝消息并重新入队
+                    channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
+                    log.error(PROTOCOL_TEST, "AMQP协议fanoutExchange消息消费失败，消息重新入队，topic：<{}>", topic, e);
+                } catch (Exception e) {
+                    //测试发现rop支持消息的重新投递
+                    // 拒绝消息并重新入队
+                    channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
+                    log.error(PROTOCOL_TEST, "AMQP协议fanoutExchange消息消费失败，消息重新投递，topic：<{}>", topic, e);
+                }
+            };
+
+            // 开始消费
+            channel.basicConsume(fanoutQueue, false, deliverCallback, consumerTag -> {
+            });
+
+            //创建生产者发送消息
+            AMQP.BasicProperties.Builder builder = new AMQP.BasicProperties.Builder();
+
+            builder.expiration(String.valueOf("1000"));
+            builder.contentType("text/plain");
+
+            for (int i = 1; i <= msgNum; i++) {
+                Date date = new Date();
+
+                String message = "AMQP协议消息，num:" + i + ",time:" + date.getTime();
+
+                // 发送持久化消息（fanout类型routingKey为空）
+                channel.basicPublish(
+                        fanoutExchange,
+                        "",
+                        builder.build(),
+                        message.getBytes()
+                );
+
+                log.info(PROTOCOL_TEST, "AMQP协议fanoutExchange机发送：<{}>", message);
+
+                // 等待确认（可选）
+                channel.waitForConfirmsOrDie(5000);
+            }
+
+            Thread.sleep(1000 * 30);
+
+            channel.close();
+            connection.close();
+            log.info(PROTOCOL_TEST, "AMQP协议fanoutExchange测试完成");
+        } catch (Exception e) {
+            log.error(PROTOCOL_TEST, "AMQP协议fanoutExchange测试失败，topic：<{}>", topic, e);
+        }
     }
 
     @Override
     public void topicExchangeTest() {
+        log.info(PROTOCOL_TEST, "AMQP协议topicExchange测试开始");
 
+        try {
+            Connection connection = createConnection(virtualHost);
+
+            String topicQueue = this.queueName + "_topic";
+            String topicExchange = this.exchangeName + "_topic";
+
+            Channel channel = connection.createChannel();
+            channel.basicQos(5);
+            // 声明持久化主题交换机
+            channel.exchangeDeclare(topicExchange, "topic", true);
+            // 声明持久化队列
+            channel.queueDeclare(topicQueue, true, false, false, null);
+
+            // 使用routingKeys配置绑定队列到交换机
+            for (String routingKey : routingKeys) {
+                channel.queueBind(topicQueue, topicExchange, routingKey);
+            }
+
+            // 启用发布者确认
+            channel.confirmSelect();
+
+            //创建消费者
+            DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+                try {
+                    String message = new String(delivery.getBody(), "UTF-8");
+                    log.info(PROTOCOL_TEST, "AMQP协议topicExchange消费成功：<{}>", message);
+
+                    // 模拟处理时间
+                    Thread.sleep(1000);
+
+                    // 手动确认消息
+                    channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    // 拒绝消息并重新入队
+                    channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
+                    log.error(PROTOCOL_TEST, "AMQP协议topicExchange消息消费失败，消息重新入队，topic：<{}>", topic, e);
+                } catch (Exception e) {
+                    //测试发现rop支持消息的重新投递
+                    // 拒绝消息并重新入队
+                    channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
+                    log.error(PROTOCOL_TEST, "AMQP协议topicExchange消息消费失败，消息重新投递，topic：<{}>", topic, e);
+                }
+            };
+
+            // 开始消费
+            channel.basicConsume(topicQueue, false, deliverCallback, consumerTag -> {
+            });
+
+            //创建生产者发送消息
+            AMQP.BasicProperties.Builder builder = new AMQP.BasicProperties.Builder();
+
+            builder.expiration(String.valueOf("1000"));
+            builder.contentType("text/plain");
+
+            for (int i = 1; i <= msgNum; i++) {
+                Date date = new Date();
+
+                String message = "AMQP协议消息，num:" + i + ",time:" + date.getTime();
+
+                // 使用第一个routingKey发送消息
+                String routingKey = routingKeys[0];
+
+                // 发送持久化消息
+                channel.basicPublish(
+                        topicExchange,
+                        routingKey,
+                        builder.build(),
+                        message.getBytes()
+                );
+
+                log.info(PROTOCOL_TEST, "AMQP协议topicExchange机发送：<{}>", message);
+
+                // 等待确认（可选）
+                channel.waitForConfirmsOrDie(5000);
+            }
+
+            Thread.sleep(1000 * 30);
+
+            channel.close();
+            connection.close();
+            log.info(PROTOCOL_TEST, "AMQP协议topicExchange测试完成");
+        } catch (Exception e) {
+            log.error(PROTOCOL_TEST, "AMQP协议topicExchange测试失败，topic：<{}>", topic, e);
+        }
     }
 }

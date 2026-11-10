@@ -47,20 +47,22 @@ tlqcn:
     msg-num: 100000
   Rot-test-config:
     enabled: true
-    url: 10.10.22.174:9876;10.10.22.175:9876
-    topic: test3
+    #url: 10.10.22.174:9876;10.10.22.175:9876;10.10.22.176:9876
+    url: 10.10.22.176:9876
+    topic: rot_test1
     producer-group: group1
     consumer-group: group1
-    tag: tag1
+    tag:
     msg-num: 10
-    enabled-sync-send-test: false
+    enabled-sync-send-test: true
     enabled-async-send-test: false
     enabled-consumer-pull-test: false
-    enabled-consumer-push-test: true
+    enabled-consumer-push-test: false
   Aot-test-config:
-    enabled: true
-    url: 10.10.22.174:5682,10.10.22.174:5682
-    topic: test2
+    enabled: false
+    #url: 10.10.22.174:5672,10.10.22.175:5672,10.10.22.176:5672
+    url: 10.10.22.175:5682
+    topic: aot_test1
     msg-num: 10
     virtual-host: vhost1
     routing-keys: lazy.orange.elephant,quick.brown.fox,orange
@@ -71,26 +73,30 @@ tlqcn:
     enabled-fanout-exchange-test: false
     enabled-topic-exchange-test: false
   Kot-test-config:
-    enabled: true
-    url: 10.10.22.174:9092,10.10.22.175:9092
-    topic: test1
+    enabled: false
+    #url: 10.10.22.174:9092,10.10.22.175:9092,10.10.22.175:9092
+    url: 10.10.22.175:9092
+    topic: test3
     msg-num: 10
     enabled-sync-send-test: false
     enabled-simple-consumer-test: true
   Mot-test-config:
-    enabled: true
-    url: tcp://10.10.22.174:1883,tcp://10.10.22.175:1883
+    enabled: false
+    url: tcp://10.10.22.174:1883,tcp://10.10.22.175:1883,tcp://10.10.22.176:1883
     topic: persistent://public/default/mqtt-topic1
     msg-num: 10
     qos: 1
     enabled-simple-test: true
   Jms-test-config:
-    enabled: true
-    broker-service-url: pulsar://10.10.22.174:6650,10.10.22.175:6650
-    web-service-url: http://10.10.22.162:8080,10.10.22.174:8080
+    enabled: false
+    broker-service-url: pulsar://10.10.22.174:6650,10.10.22.175:6650,10.10.22.176:6650
+    web-service-url: http://10.10.22.162:8080,10.10.22.175:8080,10.10.22.176:8080
     topic: persistent://public/default/jms-topic1
     msg-num: 10
-    enabled-jms2-P2P-test: true
+    enabled-jms1-P2P-test: true
+    enabled-jms1-Pub-Sub-test: false
+    enabled-jms2-P2P-test: false
+    enabled-jms2-Pub-Sub-test: false
   perf-param-configs:
     enabled: false
     topic: "persistent://public/default/perf_topic"

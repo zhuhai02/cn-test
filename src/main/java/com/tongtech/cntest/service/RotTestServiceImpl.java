@@ -17,6 +17,7 @@ import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.common.RemotingHelper;
 import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
+import org.apache.rocketmq.shaded.io.grpc.netty.shaded.io.netty.util.internal.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Marker;
@@ -41,6 +42,8 @@ public class RotTestServiceImpl implements RotTestService {
 
     private int msgNum = 0;
 
+    private String tag;
+
     private DefaultMQProducer producer;
 
 
@@ -50,6 +53,7 @@ public class RotTestServiceImpl implements RotTestService {
         this.url = tlqcnProperties.getRotTestConfig().getUrl();
         this.topic = tlqcnProperties.getRotTestConfig().getTopic();
         this.msgNum = tlqcnProperties.getRotTestConfig().getMsgNum();
+        this.tag = StringUtil.isNullOrEmpty(tlqcnProperties.getRotTestConfig().getTag()) ? "*" : tlqcnProperties.getRotTestConfig().getTag();
     }
 
     @Override
@@ -87,8 +91,6 @@ public class RotTestServiceImpl implements RotTestService {
             for (int i = 0; i < 1; i++) {
                 Date date = new Date();
 
-                List<Message> messages = new ArrayList<>();
-
                 String msgStr = "创建topic，num:" + i + ",time:" + date.getTime();
 
                 Message msg = new Message(topic,
@@ -96,8 +98,7 @@ public class RotTestServiceImpl implements RotTestService {
                         (msgStr).getBytes(RemotingHelper.DEFAULT_CHARSET)
                 );
 
-                messages.add(msg);
-                producer.send(messages);
+                producer.send(msg);
             }
         } catch (Exception e) {
             log.error(PROTOCOL_TEST, "Rocketmq协议创建topic失败，topic：<{}>", topic, e);
@@ -109,8 +110,6 @@ public class RotTestServiceImpl implements RotTestService {
             for (int i = 0; i < size; i++) {
                 Date date = new Date();
 
-                List<Message> messages = new ArrayList<>();
-
                 String msgStr = "Rocketmq协议简单消息，num:" + i + ",time:" + date.getTime();
 
                 Message msg = new Message(topic,
@@ -118,8 +117,8 @@ public class RotTestServiceImpl implements RotTestService {
                         (msgStr).getBytes(RemotingHelper.DEFAULT_CHARSET)
                 );
 
-                messages.add(msg);
-                SendResult sendResult = producer.send(messages);
+                SendResult sendResult = producer.send(msg);
+
                 log.info(PROTOCOL_TEST, msgStr + "，sendResult：<{}>", sendResult.getSendStatus());
             }
         } catch (Exception e) {
@@ -140,6 +139,7 @@ public class RotTestServiceImpl implements RotTestService {
                 String msgStr = "Rocketmq协议同步发送消息，num:" + i + ",time:" + date.getTime();
 
                 Message msg = new Message(topic,
+                        tag,
                         (msgStr).getBytes(RemotingHelper.DEFAULT_CHARSET)
                 );
 
@@ -170,6 +170,7 @@ public class RotTestServiceImpl implements RotTestService {
                     String msgStr = "Rocketmq协议同步发送消息，num:" + i + ",time:" + date.getTime();
 
                     Message msg = new Message(topic,
+                            tag,
                             msgStr.getBytes(RemotingHelper.DEFAULT_CHARSET));
 
                     // 异步发送消息, 发送结果通过callback返回给客户端
@@ -293,15 +294,17 @@ public class RotTestServiceImpl implements RotTestService {
 
             DefaultMQPushConsumer consumer = new DefaultMQPushConsumer(tlqcnProperties.getRotTestConfig().getConsumerGroup());
             consumer.setNamesrvAddr(url);
+            consumer.setInstanceName(String.valueOf(System.nanoTime()));
 
             consumer.subscribe(topic, "tag_push");
             consumer.setMessageModel(MessageModel.CLUSTERING);
-
+            final int[] num = {0};
             consumer.registerMessageListener(new MessageListenerConcurrently() {
                 public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> msgs,
                                                                 ConsumeConcurrentlyContext context) {
                     for (MessageExt ext : msgs) {
-                        log.info(PROTOCOL_TEST, "Rocketmq协议push消费成功：<{}>", new String(ext.getBody()));
+                        log.info(PROTOCOL_TEST, "Rocketmq协议push消费成功：<{}>",
+                                new String(ext.getBody()));
                     }
 
                     return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
